@@ -1,0 +1,56 @@
+# @baseUrl = http://localhost:8000/index.php/api
+# Jika menggunakan XAMPP/Laragon standard (bukan php -S), ubah baseUrl menjadi:
+@baseUrl = http://localhost/pkug-onlineapi/index.php/api
+
+# Ganti nilai token ini setelah melakukan request Login
+@token = eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vMTI3LjAuMC4xL3BrdWctb25saW5lYXBpLyIsImF1ZCI6Imh0dHA6Ly8xMjcuMC4wLjEvcGt1Zy1vbmxpbmVhcGkvIiwiaWF0IjoxNzc5NzcyNDMzLCJleHAiOjE3Nzk4NTg4MzMsImRhdGEiOnsidXNlcm5hbWUiOiJhZG1pbiJ9fQ.OiK-1UFETIFzUc6DASWk0gOFk_iSh89tcAYD2sac6-w
+
+###
+# 1. Login
+# Digunakan untuk mendapatkan JWT Token
+POST {{baseUrl}}/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=admin
+&password=admin123
+
+###
+# 2. Daftar Dokter Berdasarkan Layanan (Poli)
+# Menampilkan dokter spesialis untuk kode layanan tertentu
+GET {{baseUrl}}/dokter/list?fs_kd_layanan=P001
+Authorization: Bearer {{token}}
+
+###
+# 3. Daftar Jadwal Dokter
+# Menampilkan jadwal 45 hari kedepan beserta ketersediaan kuota
+GET {{baseUrl}}/jadwal/list?fs_kd_layanan=P001&fs_kd_petugas_medis=S188
+Authorization: Bearer {{token}}
+
+###
+# 4. Simpan Booking Antrian
+# Melakukan pendaftaran/booking jadwal dokter
+POST {{baseUrl}}/booking/simpan
+Authorization: Bearer {{token}}
+Content-Type: application/x-www-form-urlencoded
+
+fs_mr=001234
+&fd_tgl_lahir=1990-01-01
+&fs_kd_layanan=P001
+&fs_kd_petugas_medis=S001
+&fn_hari=2
+&fd_tgl_antrian=2026-06-01
+&fs_kd_sesion_poli=1
+&fs_jam_mulai=08:00
+
+###
+# 5. Update Registrasi BPJS
+# Melengkapi data nomor HP dan rujukan untuk pasien BPJS
+POST {{baseUrl}}/bpjs/registrasi
+Authorization: Bearer {{token}}
+Content-Type: application/x-www-form-urlencoded
+
+fs_kd_trs=BO1234567A
+&fs_mr=001234
+&fs_no_hp=081234567890
+&fs_kd_identitas=3401234567890001
+&fs_kd_reff=0123456789012345678
