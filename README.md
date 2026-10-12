@@ -357,11 +357,11 @@ triage, `2` triage selesai/menunggu poli, `3` poli selesai/menuju farmasi)
 }
 ```
 
-### BPJS
+~~### BPJS
 
 #### POST /bpjs/registrasi
 
-Melengkapi data HP dan rujukan BPJS untuk booking pasien.
+Melengkapi data HP dan rujukan BPJS untuk booking pasien.~~
 
 - **Header**: `Authorization: Bearer <TOKEN>`
 
