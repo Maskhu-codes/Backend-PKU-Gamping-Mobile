@@ -52,3 +52,11 @@ defined('BASEPATH') or exit('No direct script access allowed');
 $route['default_controller'] = 'welcome';
 $route['404_override'] = '';
 $route['translate_uri_dashes'] = FALSE;
+
+// Kebab-case to camelCase route aliases for API
+$route['api/auth/send-otp']['POST'] = 'api/auth/sendOtp';
+$route['api/auth/verify-otp']['POST'] = 'api/auth/verifyOtp';
+$route['api/auth/forgot-password']['POST'] = 'api/auth/forgotPassword';
+$route['api/auth/reset-password']['POST'] = 'api/auth/resetPassword';
+$route['api/user/fcm-token']['POST'] = 'api/auth/fcmToken';
+$route['api/auth/cek-nik']['POST'] = 'api/auth/cekNik';

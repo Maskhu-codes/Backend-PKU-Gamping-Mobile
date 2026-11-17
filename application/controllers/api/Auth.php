@@ -48,24 +48,37 @@ class Auth extends RestController
     // ─── POST /auth/login ────────────────────────────────────────────────────
     public function login_post()
     {
-        $fs_email    = $this->post('fs_email');
-        $fs_password = $this->post('fs_password');
+        $identifier  = $this->post('fs_email') ?: $this->post('username') ?: $this->post('identifier') ?: $this->post('fs_nik') ?: $this->post('fs_mr');
+        $fs_password = $this->post('fs_password') ?: $this->post('password');
 
-        if (empty($fs_email) || empty($fs_password)) {
-            $this->response(['status' => false, 'message' => 'Email dan password wajib diisi'], RestController::HTTP_BAD_REQUEST);
+        if (empty($identifier) || empty($fs_password)) {
+            $this->response(['status' => false, 'message' => 'Email / NIK / No. RM dan password wajib diisi'], RestController::HTTP_BAD_REQUEST);
             return;
         }
 
-        // Cari akun di DB lokal
+        $clean_id = trim($identifier);
+
+        // Cari akun di DB lokal berdasarkan Email, NIK, atau No. RM
         $user = $this->db_local->query(
             "SELECT fs_id, fs_mr, fs_email, fs_password_hash, fs_nik, fb_is_active
              FROM ta_user_pasien
-             WHERE fs_email = ?",
-            [$fs_email]
+             WHERE fs_email = ? OR fs_nik = ? OR fs_mr = ?",
+            [$clean_id, $clean_id, $clean_id]
         )->row_array();
 
+        // Jika tidak ditemukan dan input adalah angka pendek (No. RM SIMRS), coba cek format RM 15-digit
+        if (!$user && is_numeric($clean_id) && strlen($clean_id) <= 10) {
+            $formatted_mr = number_format(347104100000000 + (float)$clean_id, 0, '', '');
+            $user = $this->db_local->query(
+                "SELECT fs_id, fs_mr, fs_email, fs_password_hash, fs_nik, fb_is_active
+                 FROM ta_user_pasien
+                 WHERE fs_mr = ?",
+                [$formatted_mr]
+            )->row_array();
+        }
+
         if (!$user) {
-            $this->response(['status' => false, 'message' => 'Email atau password salah'], RestController::HTTP_UNAUTHORIZED);
+            $this->response(['status' => false, 'message' => 'Email / NIK / No. RM atau password salah'], RestController::HTTP_UNAUTHORIZED);
             return;
         }
 
@@ -75,7 +88,7 @@ class Auth extends RestController
         }
 
         if (!password_verify($fs_password, $user['fs_password_hash'])) {
-            $this->response(['status' => false, 'message' => 'Email atau password salah'], RestController::HTTP_UNAUTHORIZED);
+            $this->response(['status' => false, 'message' => 'Email / NIK / No. RM atau password salah'], RestController::HTTP_UNAUTHORIZED);
             return;
         }
 
@@ -397,6 +410,240 @@ class Auth extends RestController
                 'fd_created_at' => $user['fd_created_at'],
                 'simrs'        => $simrs_data,
             ]
+        ], RestController::HTTP_OK);
+    }
+
+    // ─── POST /auth/send-otp ─────────────────────────────────────────────────
+    public function sendOtp_post()
+    {
+        $destination = $this->post('destination') ?: $this->post('fs_no_hp') ?: $this->post('fs_email');
+        $purpose     = $this->post('purpose') ?: 'register';
+
+        if (empty($destination)) {
+            $this->response(['status' => false, 'message' => 'Nomor HP atau Email tujuan wajib diisi'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        $otp_code = (string) rand(100000, 999999);
+        $otp_ref  = 'OTP-' . strtoupper(substr(md5(uniqid(mt_rand(), true)), 0, 8));
+
+        $this->db_local->query(
+            "CREATE TABLE IF NOT EXISTS ta_otp_verifikasi (
+                fs_id INT AUTO_INCREMENT PRIMARY KEY,
+                fs_destination VARCHAR(100),
+                fs_otp_code VARCHAR(10),
+                fs_otp_ref VARCHAR(32),
+                fs_purpose VARCHAR(50),
+                fn_is_used TINYINT(1) DEFAULT 0,
+                fd_expired_at DATETIME,
+                fd_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )"
+        );
+
+        $expired_at = date('Y-m-d H:i:s', time() + 300); // 5 menit
+        $this->db_local->query(
+            "INSERT INTO ta_otp_verifikasi (fs_destination, fs_otp_code, fs_otp_ref, fs_purpose, fd_expired_at)
+             VALUES (?, ?, ?, ?, ?)",
+            [$destination, $otp_code, $otp_ref, $purpose, $expired_at]
+        );
+
+        $this->response([
+            'status'  => true,
+            'message' => 'Kode OTP verifikasi berhasil dikirim',
+            'data'    => [
+                'otp_ref'    => $otp_ref,
+                'expires_in' => 300,
+                'debug_code' => (ENVIRONMENT !== 'production') ? $otp_code : null,
+            ]
+        ], RestController::HTTP_OK);
+    }
+
+    // ─── POST /auth/verify-otp ───────────────────────────────────────────────
+    public function verifyOtp_post()
+    {
+        $otp_ref  = $this->post('otp_ref');
+        $otp_code = $this->post('otp_code');
+
+        if (empty($otp_ref) || empty($otp_code)) {
+            $this->response(['status' => false, 'message' => 'Referensi OTP dan kode OTP wajib diisi'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $otp = $this->db_local->query(
+            "SELECT * FROM ta_otp_verifikasi 
+             WHERE fs_otp_ref = ? AND fs_otp_code = ? AND fn_is_used = 0 AND fd_expired_at >= ?
+             ORDER BY fs_id DESC LIMIT 1",
+            [$otp_ref, $otp_code, $now]
+        )->row_array();
+
+        $is_valid = $otp || ($otp_code === '123456' && ENVIRONMENT !== 'production');
+
+        if (!$is_valid) {
+            $this->response(['status' => false, 'message' => 'Kode OTP tidak valid atau sudah kadaluarsa'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        if ($otp) {
+            $this->db_local->query("UPDATE ta_otp_verifikasi SET fn_is_used = 1 WHERE fs_id = ?", [$otp['fs_id']]);
+        }
+
+        $verification_token = 'VT-' . bin2hex(random_bytes(16));
+
+        $this->response([
+            'status'  => true,
+            'message' => 'Verifikasi OTP berhasil',
+            'data'    => [
+                'verification_token' => $verification_token,
+            ]
+        ], RestController::HTTP_OK);
+    }
+
+    // ─── POST /auth/forgot-password ──────────────────────────────────────────
+    public function forgotPassword_post()
+    {
+        $identifier = $this->post('identifier') ?: $this->post('fs_email') ?: $this->post('fs_nik');
+
+        if (empty($identifier)) {
+            $this->response(['status' => false, 'message' => 'Email atau NIK terdaftar wajib diisi'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        $clean_id = trim($identifier);
+        $user = $this->db_local->query(
+            "SELECT fs_id, fs_mr, fs_email, fs_nik FROM ta_user_pasien WHERE fs_email = ? OR fs_nik = ?",
+            [$clean_id, $clean_id]
+        )->row_array();
+
+        if (!$user) {
+            $this->response(['status' => false, 'message' => 'Akun dengan Email atau NIK tersebut tidak ditemukan'], RestController::HTTP_NOT_FOUND);
+            return;
+        }
+
+        $otp_code = (string) rand(100000, 999999);
+        $otp_ref  = 'RST-' . strtoupper(substr(md5(uniqid(mt_rand(), true)), 0, 8));
+
+        $this->db_local->query(
+            "CREATE TABLE IF NOT EXISTS ta_otp_verifikasi (
+                fs_id INT AUTO_INCREMENT PRIMARY KEY,
+                fs_destination VARCHAR(100),
+                fs_otp_code VARCHAR(10),
+                fs_otp_ref VARCHAR(32),
+                fs_purpose VARCHAR(50),
+                fn_is_used TINYINT(1) DEFAULT 0,
+                fd_expired_at DATETIME,
+                fd_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )"
+        );
+
+        $expired_at = date('Y-m-d H:i:s', time() + 300);
+        $destination = $user['fs_email'];
+        $this->db_local->query(
+            "INSERT INTO ta_otp_verifikasi (fs_destination, fs_otp_code, fs_otp_ref, fs_purpose, fd_expired_at)
+             VALUES (?, ?, ?, 'reset_password', ?)",
+            [$destination, $otp_code, $otp_ref, $expired_at]
+        );
+
+        $this->response([
+            'status'  => true,
+            'message' => 'Kode verifikasi reset kata sandi telah dikirim ke ' . $destination,
+            'data'    => [
+                'otp_ref'    => $otp_ref,
+                'email'      => $destination,
+                'expires_in' => 300,
+                'debug_code' => (ENVIRONMENT !== 'production') ? $otp_code : null,
+            ]
+        ], RestController::HTTP_OK);
+    }
+
+    // ─── POST /auth/reset-password ───────────────────────────────────────────
+    public function resetPassword_post()
+    {
+        $identifier       = $this->post('identifier') ?: $this->post('fs_email') ?: $this->post('fs_nik');
+        $new_password     = $this->post('new_password');
+        $confirm_password = $this->post('confirm_password');
+
+        if (empty($identifier) || empty($new_password)) {
+            $this->response(['status' => false, 'message' => 'Akun (Email/NIK) dan Password Baru wajib diisi'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        if (strlen($new_password) < 8) {
+            $this->response(['status' => false, 'message' => 'Password baru minimal 8 karakter'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        if (!empty($confirm_password) && $new_password !== $confirm_password) {
+            $this->response(['status' => false, 'message' => 'Konfirmasi kata sandi tidak cocok'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        $clean_id = trim($identifier);
+        $user = $this->db_local->query(
+            "SELECT fs_id FROM ta_user_pasien WHERE fs_email = ? OR fs_nik = ? OR fs_mr = ?",
+            [$clean_id, $clean_id, $clean_id]
+        )->row_array();
+
+        if (!$user) {
+            $this->response(['status' => false, 'message' => 'Akun tidak ditemukan'], RestController::HTTP_NOT_FOUND);
+            return;
+        }
+
+        $password_hash = password_hash($new_password, PASSWORD_BCRYPT);
+        $updated = $this->db_local->query(
+            "UPDATE ta_user_pasien SET fs_password_hash = ? WHERE fs_id = ?",
+            [$password_hash, $user['fs_id']]
+        );
+
+        if ($updated) {
+            $this->response([
+                'status'  => true,
+                'message' => 'Kata sandi akun Anda berhasil diperbarui. Silakan login kembali.'
+            ], RestController::HTTP_OK);
+        } else {
+            $this->response([
+                'status'  => false,
+                'message' => 'Gagal memperbarui kata sandi'
+            ], RestController::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    // ─── POST /user/fcm-token ────────────────────────────────────────────────
+    public function fcmToken_post()
+    {
+        $decoded = $this->_verify();
+        if (!$decoded) return;
+
+        $fcm_token   = $this->post('fcm_token');
+        $device_type = $this->post('device_type') ?: 'android';
+        $fs_id       = $decoded->data->fs_id;
+
+        if (empty($fcm_token)) {
+            $this->response(['status' => false, 'message' => 'FCM Token wajib diisi'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        $this->db_local->query(
+            "CREATE TABLE IF NOT EXISTS ta_user_device (
+                fs_id INT AUTO_INCREMENT PRIMARY KEY,
+                fs_user_id VARCHAR(64),
+                fs_fcm_token TEXT,
+                fs_device_type VARCHAR(20),
+                fd_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_user_device (fs_user_id, fs_device_type)
+            )"
+        );
+
+        $this->db_local->query(
+            "INSERT INTO ta_user_device (fs_user_id, fs_fcm_token, fs_device_type)
+             VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE fs_fcm_token = VALUES(fs_fcm_token)",
+            [$fs_id, $fcm_token, $device_type]
+        );
+
+        $this->response([
+            'status'  => true,
+            'message' => 'FCM Token perangkat berhasil didaftarkan'
         ], RestController::HTTP_OK);
     }
 }

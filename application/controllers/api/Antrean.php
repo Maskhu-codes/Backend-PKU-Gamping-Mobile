@@ -30,12 +30,12 @@ class Antrean extends RestController
             FROM PKU.dbo.TAC_RJ_MEDIS a 
             LEFT JOIN HOSPITAL.dbo.TA_REGISTRASI b ON a.FS_KD_REG=b.FS_KD_REG 
             INNER JOIN HOSPITAL.dbo.TA_TRS_ANTRIAN c ON a.FS_KD_REG = c.FS_KD_REG 
-            WHERE a.mdd='$tanggal' AND a.FS_KD_MEDIS = '$fs_kd_medis' 
-            AND b.FS_KD_LAYANAN = '$fs_kd_layanan' 
+            WHERE a.mdd = ? AND a.FS_KD_MEDIS = ? 
+            AND b.FS_KD_LAYANAN = ? 
             AND b.FD_TGL_VOID = '3000-01-01' 
             ORDER BY c.FN_NO_URUT DESC
         ";
-        $q_terlayani = $this->db->query($sql_terlayani)->row_array();
+        $q_terlayani = $this->db->query($sql_terlayani, [$tanggal, $fs_kd_medis, $fs_kd_layanan])->row_array();
         $no_sedang_dilayani = $q_terlayani ? $q_terlayani['FN_NO_URUT'] : '-';
 
         $status_pasien = 0;
@@ -43,21 +43,21 @@ class Antrean extends RestController
         if ($fs_kd_antrian) {
             $sql_reg = "
                 SELECT FS_KD_REG FROM HOSPITAL.dbo.TA_REGISTRASI 
-                WHERE FS_KD_TRS_ANTRIAN = '$fs_kd_antrian' AND FD_TGL_VOID = '3000-01-01'
+                WHERE FS_KD_TRS_ANTRIAN = ? AND FD_TGL_VOID = '3000-01-01'
             ";
-            $q_reg = $this->db->query($sql_reg)->row_array();
+            $q_reg = $this->db->query($sql_reg, [$fs_kd_antrian])->row_array();
 
             if ($q_reg) {
                 $status_pasien = 1; // Terdaftar (Menuju Triage)
                 $kd_reg = $q_reg['FS_KD_REG'];
 
-                $sql_triage = "SELECT FS_KD_REG FROM PKU.dbo.TAC_ASES_PER2 WHERE FS_KD_REG = '$kd_reg'";
-                if ($this->db->query($sql_triage)->row_array()) {
+                $sql_triage = "SELECT FS_KD_REG FROM PKU.dbo.TAC_ASES_PER2 WHERE FS_KD_REG = ?";
+                if ($this->db->query($sql_triage, [$kd_reg])->row_array()) {
                     $status_pasien = 2; // Triage Selesai (Menunggu Poli)
                 }
 
-                $sql_medis = "SELECT FS_KD_REG FROM PKU.dbo.TAC_RJ_MEDIS WHERE FS_KD_REG = '$kd_reg'";
-                if ($this->db->query($sql_medis)->row_array()) {
+                $sql_medis = "SELECT FS_KD_REG FROM PKU.dbo.TAC_RJ_MEDIS WHERE FS_KD_REG = ?";
+                if ($this->db->query($sql_medis, [$kd_reg])->row_array()) {
                     $status_pasien = 3; // Poli Selesai (Menuju Farmasi)
                 }
             } else {

@@ -31,11 +31,14 @@ class Riwayat extends RestController
             SELECT COUNT(*) AS total
             FROM HOSPITAL.dbo.TA_REGISTRASI a
             INNER JOIN PKU.dbo.TAC_RJ_MEDIS d ON a.FS_KD_REG = d.FS_KD_REG
-            WHERE a.FS_MR = '$fs_mr' AND a.FD_TGL_VOID = '3000-01-01'
+            WHERE a.FS_MR = ? AND a.FD_TGL_VOID = '3000-01-01'
         ";
-        $total_row = $this->db->query($sql_count)->row_array();
+        $total_row = $this->db->query($sql_count, [$fs_mr])->row_array();
         $total = $total_row ? (int)$total_row['total'] : 0;
         $total_pages = ceil($total / $limit);
+
+        $row_start = $offset + 1;
+        $row_end = $offset + $limit;
 
         $sql_data = "
             SELECT * FROM (
@@ -50,11 +53,11 @@ class Riwayat extends RestController
                 LEFT JOIN HOSPITAL.dbo.TA_LAYANAN b ON a.FS_KD_LAYANAN = b.FS_KD_LAYANAN
                 LEFT JOIN HOSPITAL.dbo.TD_PEG c ON a.FS_KD_MEDIS = c.FS_KD_PEG
                 INNER JOIN PKU.dbo.TAC_RJ_MEDIS d ON a.FS_KD_REG = d.FS_KD_REG
-                WHERE a.FS_MR = '$fs_mr' AND a.FD_TGL_VOID = '3000-01-01'
+                WHERE a.FS_MR = ? AND a.FD_TGL_VOID = '3000-01-01'
             ) AS sub
-            WHERE row_num > $offset AND row_num <= " . ($offset + $limit) . "
+            WHERE row_num BETWEEN ? AND ?
         ";
-        $data = $this->db->query($sql_data)->result_array();
+        $data = $this->db->query($sql_data, [$fs_mr, $row_start, $row_end])->result_array();
 
         $this->response([
             'status' => true,

@@ -42,11 +42,11 @@ class Jadwal extends RestController {
         $tgl_terakhir = date('Y-m-d', strtotime('+45 days', strtotime($hari_ini)));
 
         $query2 = "SELECT * FROM HOSPITAL.dbo.TA_JADWAL_DOKTER a 
-                   JOIN dbo.if_get_kalender('$next_day','$tgl_terakhir') b ON a.FN_HARI=b.fn_hari
-                   WHERE a.FS_KD_DOKTER = '$fs_kd_petugas_medis' AND fs_kd_layanan='$fs_kd_layanan'
+                   JOIN dbo.if_get_kalender(?, ?) b ON a.FN_HARI=b.fn_hari
+                   WHERE a.FS_KD_DOKTER = ? AND a.fs_kd_layanan = ?
                    ORDER BY b.fd_tgl ASC";
                    
-        $result = $this->db->query($query2)->result_array();
+        $result = $this->db->query($query2, [$next_day, $tgl_terakhir, $fs_kd_petugas_medis, $fs_kd_layanan])->result_array();
 
         $jadwal_list = [];
         foreach ($result as $data2) {
@@ -54,15 +54,28 @@ class Jadwal extends RestController {
             $fn_hari = $data2['fn_hari'];
 
             // Cek pasien terdaftar
-            $q_daftar = $this->db->query("SELECT COUNT(fs_kd_trs) fn_daftar FROM ta_trs_booking WHERE fd_tgl_void='3000-01-01' AND fs_kd_layanan='$fs_kd_layanan' AND fs_kd_petugas_medis='$fs_kd_petugas_medis' AND fd_tgl_periksa='$tgl'")->row_array();
+            $q_daftar = $this->db->query(
+                "SELECT COUNT(fs_kd_trs) fn_daftar FROM ta_trs_booking 
+                 WHERE fd_tgl_void='3000-01-01' AND fs_kd_layanan = ? AND fs_kd_petugas_medis = ? AND fd_tgl_periksa = ?",
+                [$fs_kd_layanan, $fs_kd_petugas_medis, $tgl]
+            )->row_array();
             $fn_daftar = $q_daftar ? $q_daftar['fn_daftar'] : 0;
 
             // Cek maksimal pasien
-            $q_max = $this->db->query("SELECT FN_MAX FROM TA_JADWAL_DOKTER WHERE (FS_KD_LAYANAN = '$fs_kd_layanan') AND (FS_KD_DOKTER = '$fs_kd_petugas_medis') AND (FN_HARI = '$fn_hari')")->row_array();
+            $q_max = $this->db->query(
+                "SELECT FN_MAX FROM TA_JADWAL_DOKTER 
+                 WHERE (FS_KD_LAYANAN = ?) AND (FS_KD_DOKTER = ?) AND (FN_HARI = ?)",
+                [$fs_kd_layanan, $fs_kd_petugas_medis, $fn_hari]
+            )->row_array();
             $fn_max = $q_max ? $q_max['FN_MAX'] : 0;
 
             // Cek Poli Tutup
-            $q_closed = $this->db->query("SELECT aa.fs_kd_trs FROM ta_trs_closed_poli aa INNER JOIN ta_trs_closed_poli2 bb ON aa.fs_kd_trs = bb.fs_kd_trs WHERE aa.fs_kd_layanan = '$fs_kd_layanan' AND aa.fs_kd_petugas_medis = '$fs_kd_petugas_medis' AND aa.fd_tgl_void = '3000-01-01' AND bb.fd_tgl_closed = '$tgl'")->row_array();
+            $q_closed = $this->db->query(
+                "SELECT aa.fs_kd_trs FROM ta_trs_closed_poli aa 
+                 INNER JOIN ta_trs_closed_poli2 bb ON aa.fs_kd_trs = bb.fs_kd_trs 
+                 WHERE aa.fs_kd_layanan = ? AND aa.fs_kd_petugas_medis = ? AND aa.fd_tgl_void = '3000-01-01' AND bb.fd_tgl_closed = ?",
+                [$fs_kd_layanan, $fs_kd_petugas_medis, $tgl]
+            )->row_array();
             
             $is_closed = !empty($q_closed['fs_kd_trs']);
             $is_full = ($fn_daftar >= $fn_max);

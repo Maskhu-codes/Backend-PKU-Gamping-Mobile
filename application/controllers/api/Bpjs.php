@@ -42,8 +42,8 @@ class Bpjs extends RestController {
 
         $this->db->trans_start();
 
-        $this->db->query("UPDATE TC_MR SET FS_TLP_PASIEN = '$fs_no_hp', FS_NO_HP = '$fs_no_hp' WHERE FS_MR = '$fs_mr'");
-        $this->db->query("UPDATE TA_TRS_BOOKING SET FS_TLP_PASIEN_BOOK = '$fs_no_hp', FS_KETERANGAN = '$fs_kd_identitas', fs_no_rujukan_bpjs = '$fs_kd_reff' WHERE FS_KD_TRS = '$fs_kd_trs'");
+        $this->db->query("UPDATE TC_MR SET FS_TLP_PASIEN = ?, FS_NO_HP = ? WHERE FS_MR = ?", [$fs_no_hp, $fs_no_hp, $fs_mr]);
+        $this->db->query("UPDATE TA_TRS_BOOKING SET FS_TLP_PASIEN_BOOK = ?, FS_KETERANGAN = ?, fs_no_rujukan_bpjs = ? WHERE FS_KD_TRS = ?", [$fs_no_hp, $fs_kd_identitas, $fs_kd_reff, $fs_kd_trs]);
 
         $this->db->trans_complete();
 

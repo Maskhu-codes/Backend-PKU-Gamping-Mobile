@@ -43,7 +43,7 @@ class Dokter extends RestController {
             INNER JOIN dbo.TA_LAYANAN dd ON bb.FS_KD_LAYANAN = dd.FS_KD_LAYANAN
             INNER JOIN dbo.TA_INSTALASI ee ON dd.FS_KD_INSTALASI = ee.FS_KD_INSTALASI
             INNER JOIN dbo.TA_JADWAL_DOKTER ff ON aa.FS_KD_PEG=ff.FS_KD_DOKTER
-            WHERE dd.fs_kd_layanan = '$fs_kd_layanan' AND
+            WHERE dd.fs_kd_layanan = ? AND
             aa.FB_AKTIF_DINAS = 'True' AND
             aa.FS_KD_PEG <> 'S000' AND
             cc.FS_KD_SAT_TUGAS = 'MD' AND
@@ -51,7 +51,7 @@ class Dokter extends RestController {
             AND aa.fs_kd_peg like 'S%'
             ORDER BY fs_nm_peg ASC";
             
-        $result = $this->db->query($query2)->result_array();
+        $result = $this->db->query($query2, [$fs_kd_layanan])->result_array();
 
         $this->response([
             'status' => true,
