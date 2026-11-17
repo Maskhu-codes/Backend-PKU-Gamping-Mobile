@@ -132,6 +132,7 @@ class CI_DB_sqlsrv_driver extends CI_DB {
 			'ConnectionPooling'	=> ($pooling === TRUE) ? 1 : 0,
 			'CharacterSet'		=> $charset,
 			'Encrypt'		=> ($this->encrypt === TRUE) ? 1 : 0,
+			'TrustServerCertificate' => true,
 			'ReturnDatesAsStrings'	=> 1
 		);
 
