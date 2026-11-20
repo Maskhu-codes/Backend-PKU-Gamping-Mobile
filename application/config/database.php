@@ -80,10 +80,10 @@ $env = function ($name, $default = '') {
 
 $db['default'] = array(
 	'dsn'	=> '',
-	'hostname' => $env('DB_HOSPITAL_HOST'),
-	'username' => $env('DB_HOSPITAL_USERNAME'),
-	'password' => $env('DB_HOSPITAL_PASSWORD'),
-	'database' => $env('DB_HOSPITAL_DATABASE', 'HOSPITAL'),
+	'hostname' => $env('192.168.20.2'),
+	'username' => $env('admin'),
+	'password' => $env('123'),
+	'database' => $env('HOSPITAL'),
 	'dbdriver' => 'sqlsrv',
 	'dbprefix' => '',
 	'pconnect' => FALSE,
@@ -101,10 +101,10 @@ $db['default'] = array(
 );
 
 $db['local'] = array(
-	'hostname' => $env('DB_LOCAL_HOST'),
-	'username' => $env('DB_LOCAL_USERNAME'),
-	'password' => $env('DB_LOCAL_PASSWORD'),
-	'database' => $env('DB_LOCAL_DATABASE', 'pkug_online'),
+	'hostname' => $env('192.168.20.6'),
+	'username' => $env('root'),
+	'password' => $env('123'),
+	'database' => $env('pkug_online'),
 	'dbdriver' => 'mysqli',
 	'char_set' => 'utf8mb4',
 	'dbcollat' => 'utf8mb4_unicode_ci',
@@ -121,10 +121,10 @@ $db['local'] = array(
 );
 
 $db['antrian-farmasi'] = array(
-	'hostname' => $env('DB_FARMASI_HOST'),
-	'username' => $env('DB_FARMASI_USERNAME'),
-	'password' => $env('DB_FARMASI_PASSWORD'),
-	'database' => $env('DB_FARMASI_DATABASE', 'antrian'),
+	'hostname' => $env('192.168.20.6'),
+	'username' => $env('root'),
+	'password' => $env('123'),
+	'database' => $env('antrian'),
 	'dbdriver' => 'mysqli',
 	'char_set' => 'utf8mb4',
 	'dbcollat' => 'utf8mb4_unicode_ci',
