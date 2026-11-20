@@ -11,6 +11,22 @@ class Booking extends RestController {
         $this->load->database();
     }
 
+    public function test_koneksi_get()
+{
+    if ($this->db->conn_id) {
+        $this->response([
+            'status' => true,
+            'message' => 'Koneksi database berhasil',
+            'database' => $this->db->database
+        ], RestController::HTTP_OK);
+    } else {
+        $this->response([
+            'status' => false,
+            'message' => 'Koneksi database gagal'
+        ], RestController::HTTP_INTERNAL_SERVER_ERROR);
+    }
+}
+
     private function _verify() {
         $headers = $this->input->get_request_header('Authorization');
         if (!empty($headers)) {
@@ -27,9 +43,11 @@ class Booking extends RestController {
     }
 
     public function simpan_post() {
-        if (!$this->_verify()) return;
+        $decoded = $this->_verify();
+        if (!$decoded) return;
 
-        $fs_mr = $this->post('fs_mr');
+        $fs_mr = isset($decoded->data->fs_mr) ? normalize_patient_mr($decoded->data->fs_mr) : null;
+        $posted_mr = normalize_patient_mr($this->post('fs_mr'));
         $fd_tgl_lahir = $this->post('fd_tgl_lahir');
         $fs_kd_layanan = $this->post('fs_kd_layanan');
         $fs_kd_petugas_medis = $this->post('fs_kd_petugas_medis');
@@ -43,14 +61,15 @@ class Booking extends RestController {
             return;
         }
 
+        if (empty($posted_mr) || $posted_mr !== $fs_mr) {
+            $this->response(['status' => false, 'message' => 'Nomor MR tidak sesuai dengan akun yang sedang login'], RestController::HTTP_FORBIDDEN);
+            return;
+        }
+
         $today = date('Y-m-d');
         $timetoday = date('H:i:s');
         
-        if (strlen($fs_mr) > 10) {
-            $fs_mr_full = $fs_mr;
-        } else {
-            $fs_mr_full = number_format(347104100000000 + $fs_mr, 0, "", "");
-        }
+        $fs_mr_full = $fs_mr;
 
         $q_mr = $this->db->query(
             "SELECT FS_MR, FD_TGL_LAHIR FROM TC_MR WHERE (FS_MR = ?) AND (FD_TGL_LAHIR = ?)",
@@ -230,16 +249,10 @@ class Booking extends RestController {
         $decoded = $this->_verify();
         if (!$decoded) return;
 
-        $fs_mr = $decoded->data->fs_mr;
+        $fs_mr = isset($decoded->data->fs_mr) ? normalize_patient_mr($decoded->data->fs_mr) : null;
         if (empty($fs_mr)) {
             $this->response(['status' => false, 'message' => 'Pasien belum memiliki RM'], RestController::HTTP_BAD_REQUEST);
             return;
-        }
-
-        if (strlen($fs_mr) > 10) {
-            $fs_mr_full = $fs_mr;
-        } else {
-            $fs_mr_full = number_format(347104100000000 + $fs_mr, 0, "", "");
         }
 
         $today = date('Y-m-d');
@@ -262,10 +275,10 @@ class Booking extends RestController {
             WHERE a.fs_mr = ? 
               AND a.fd_tgl_periksa >= ?
               AND a.fd_tgl_void = '3000-01-01'
-            ORDER BY a.fd_tgl_periksa DESC
+            ORDER BY a.fd_tgl_periksa ASC
         ";
 
-        $q = $this->db->query($sql, [$fs_mr_full, $today])->row_array();
+        $q = $this->db->query($sql, [$fs_mr, $today])->row_array();
 
         if ($q) {
             $this->response(['status' => true, 'data' => $q], RestController::HTTP_OK);

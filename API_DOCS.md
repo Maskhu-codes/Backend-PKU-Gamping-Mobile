@@ -72,3 +72,24 @@ Semua endpoint (kecuali Login) membutuhkan header `Authorization: Bearer <TOKEN>
     "message": "Registrasi BPJS berhasil"
 }
 ```
+
+### 6. Data Beranda Pasien
+- **Endpoint**: `GET /beranda`
+- **Header**: `Authorization: Bearer <TOKEN>`
+- Identitas pasien diambil dari `data.fs_mr` pada JWT, bukan dari parameter request.
+- Data pasien dibaca dari `HOSPITAL.dbo.TC_MR`; booking aktif dibaca dari `TA_TRS_BOOKING` dan dilengkapi dengan `TA_TRS_ANTRIAN`, `TA_LAYANAN`, serta `TD_PEG`.
+- Jika pasien belum memiliki booking aktif, `booking_aktif` bernilai `null`.
+
+### 7. Antrean Pasien
+- **Endpoint**: `GET /antrean`
+- **Header**: `Authorization: Bearer <TOKEN>`
+- Opsional: `fs_kd_antrian` untuk memilih antrean aktif milik pasien yang login. Nomor antrean milik pasien lain tidak akan dikembalikan.
+- Respons memuat detail booking, nomor urut terakhir yang tercatat pada rekam medis poli, serta jumlah antrean sebelumnya yang belum tercatat selesai. Nilai status berasal dari registrasi, asesmen triage, dan rekam medis poli.
+- `sedang_dilayani` bernilai `null` karena skema yang dapat diverifikasi belum menunjukkan field nomor yang sedang dipanggil. `nomor_terakhir_dilayani` adalah nomor terbaru pada rekam medis poli dan tidak diklaim sebagai nomor yang sedang dipanggil.
+- `jumlah_di_depan` dan `nomor_terakhir_dilayani` bernilai `null` untuk jadwal selain hari ini atau jika sumber data tidak memiliki nilai.
+- `lokasi_poli` saat ini `null`; belum ada sumber kolom lokasi/ruang yang terverifikasi di skema yang digunakan.
+
+### Catatan Integrasi
+- JWT login dan registrasi menyimpan identitas pada `data.fs_mr`. Endpoint pasien memetakan No. RM pendek ke format SIMRS yang digunakan saat ini sebelum query.
+- `POST /booking/simpan` tetap menerima `fs_mr` agar kompatibel dengan klien yang ada, tetapi nilainya harus cocok dengan MR pada JWT.
+- Koneksi utama (`default`) diarahkan ke SQL Server database `HOSPITAL`; akun aplikasi berada pada koneksi `local`. Koneksi dan ketersediaan tabel tetap perlu diuji pada server yang menjalankan database, karena tidak tersedia dalam pengujian lokal ini.

@@ -54,3 +54,13 @@ fs_kd_trs=BO1234567A
 &fs_no_hp=081234567890
 &fs_kd_identitas=3401234567890001
 &fs_kd_reff=0123456789012345678
+
+###
+# 6. Data Beranda pasien dari identitas JWT
+GET {{baseUrl}}/beranda
+Authorization: Bearer {{token}}
+
+###
+# 7. Antrean aktif pasien dari identitas JWT
+GET {{baseUrl}}/antrean
+Authorization: Bearer {{token}}

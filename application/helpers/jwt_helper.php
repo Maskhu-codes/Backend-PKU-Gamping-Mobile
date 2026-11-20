@@ -19,3 +19,24 @@ function verify_jwt($token) {
         return false;
     }
 }
+
+function normalize_patient_mr($fs_mr) {
+    if (!is_scalar($fs_mr)) {
+        return null;
+    }
+
+    $fs_mr = trim((string) $fs_mr);
+    if ($fs_mr === '') {
+        return null;
+    }
+
+    if (strlen($fs_mr) <= 10) {
+        if (!ctype_digit($fs_mr)) {
+            return null;
+        }
+
+        return number_format(347104100000000 + (float) $fs_mr, 0, '', '');
+    }
+
+    return $fs_mr;
+}

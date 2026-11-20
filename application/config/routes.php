@@ -60,3 +60,5 @@ $route['api/auth/forgot-password']['POST'] = 'api/auth/forgotPassword';
 $route['api/auth/reset-password']['POST'] = 'api/auth/resetPassword';
 $route['api/user/fcm-token']['POST'] = 'api/auth/fcmToken';
 $route['api/auth/cek-nik']['POST'] = 'api/auth/cekNik';
+$route['api/beranda']['GET'] = 'api/beranda/index';
+$route['api/antrean']['GET'] = 'api/antrean/status';
