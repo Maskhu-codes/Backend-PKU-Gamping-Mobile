@@ -15,6 +15,7 @@ CodeIgniter 3 dan library [codeigniter-restserver](https://github.com/chriskacer
   - [Dokter](#dokter)
   - [Jadwal Dokter](#jadwal-dokter)
   - [Booking Antrian](#booking-antrian)
+  - [Beranda](#beranda)
   - [Antrean](#antrean)
   - [BPJS](#bpjs)
   - [Farmasi](#farmasi)
@@ -26,7 +27,7 @@ CodeIgniter 3 dan library [codeigniter-restserver](https://github.com/chriskacer
 ## Base URL
 
 ```
-http://localhost/pkug-onlineapi/index.php/api
+http://localhost/<nama-folder-project>/index.php/api
 ```
 
 > Internet Server (XAMPP/Laragon) menggunakan `index.php`. Jika memakai
@@ -65,9 +66,34 @@ Token diperoleh dari `POST /auth/login` atau `POST /auth/register` dan berlaku
 selama **24 jam**. Bila token tidak valid/kadaluarsa, server membalas `401`
 dengan `{"status": false, "message": "Unauthorized Access"}`.
 
-Endpoint publik (tanpa token): `layanan`, `dokter`, `jadwal`, sebagian `antrean`,
-`farmasi`, `riwayat`, `penunjang`, `master`, `wilayah`, serta `auth/login`,
-`auth/cekNik`, dan `auth/register`.
+Endpoint yang saat ini memverifikasi JWT: `auth/me`, `user/fcm-token`,
+`booking/simpan`, `booking/aktif`, `bpjs/registrasi`, `beranda`, `antrean`,
+`riwayat`, dan `penunjang`.
+Endpoint katalog seperti `layanan`, `dokter`, `jadwal`, `farmasi`, `master`, dan
+`wilayah` bersifat publik, demikian juga `auth/login`, `auth/register`,
+`auth/cekNik`, dan endpoint OTP/password-reset. Endpoint Riwayat dan Penunjang
+mengambil MR dari JWT; parameter `fs_mr` pada query string tidak digunakan.
+Detail laboratorium juga dibatasi ke transaksi milik MR pada token.
+
+## Konfigurasi Environment
+
+Kredensial database tidak disimpan di repository. Atur variabel berikut pada
+environment proses PHP/Apache Laragon, lalu restart Apache:
+
+| Variabel | Kegunaan |
+| -------- | -------- |
+| `JWT_SECRET` | Secret HS256 acak, minimal 32 karakter |
+| `DB_HOSPITAL_HOST`, `DB_HOSPITAL_USERNAME`, `DB_HOSPITAL_PASSWORD` | SQL Server SIMRS |
+| `DB_LOCAL_HOST`, `DB_LOCAL_USERNAME`, `DB_LOCAL_PASSWORD` | Database akun online |
+| `DB_FARMASI_HOST`, `DB_FARMASI_USERNAME`, `DB_FARMASI_PASSWORD` | Database antrean farmasi |
+| `DB_HOSPITAL_DATABASE`, `DB_LOCAL_DATABASE`, `DB_FARMASI_DATABASE` | Opsional; default `HOSPITAL`, `pkug_online`, `antrian` |
+
+Untuk melihat nama kolom tabel SIMRS yang dipakai API, jalankan `php db_test.php`
+dari terminal. Skrip ini read-only, memerlukan driver `sqlsrv`, dan hanya dapat
+dijalankan lewat CLI.
+
+Secret JWT yang baru akan membuat token lama tidak berlaku; pasien perlu login
+kembali setelah perubahan secret.
 
 ---
 
@@ -90,7 +116,7 @@ Login akun pasien, mengembalikan JWT.
 {
     "status": true,
     "message": "Login berhasil",
-    "token": "eyJ0eXAiOiJKV1QiLCJhbGci...",
+    "token": "<JWT>",
     "user": {
         "fs_id": "uuid",
         "fs_mr": "3471041000000001",
@@ -169,7 +195,7 @@ Mengembalikan JWT (auto-login).
 {
     "status": true,
     "message": "Akun berhasil dibuat",
-    "token": "eyJ0eXAiOiJKV1QiLCJhbGci...",
+    "token": "<JWT>",
     "user": { "fs_id": "uuid", "fs_mr": "3471041000000001", "fs_email": "pasien@mail.com", "fs_nik": "3401...", "fs_nm_pasien": "Nama Pasien" }
 }
 ```
@@ -322,7 +348,7 @@ Mengambil booking aktif pasien (tanggal periksa >= hari ini).
         "no_booking": "BO1000001A",
         "no_antrian": "AN1000001A",
         "no_urut": 1,
-        "fd_tgl_periksa": "2026-06-01",
+        "fd_tgl_periksa": "YYYY-MM-DD",
         "fs_jam_mulai": "08:00",
         "fs_kd_layanan": "P001",
         "fs_kd_petugas_medis": "S188",
@@ -332,38 +358,69 @@ Mengambil booking aktif pasien (tanggal periksa >= hari ini).
 }
 ```
 
+### Beranda
+
+#### GET /beranda
+
+Mengambil identitas pasien dari `data.fs_mr` pada JWT dan booking aktif terdekat
+untuk hari ini atau sesudahnya. MR tidak diterima dari query string.
+
+- **Header**: `Authorization: Bearer <TOKEN>`
+- **Response `200`**: `data.pasien` memuat MR dan nama pasien; `data.booking_aktif`
+  memuat nomor booking/antrian, urutan, tanggal, jam, poli, dan dokter. Nilai
+  `booking_aktif` adalah `null` bila tidak ada booking aktif.
+
 ### Antrean
 
-#### GET /antrean/status
+#### GET /antrean (alias GET /antrean/status)
 
-Status antrean terkini poli/dokter dan status pasien.
+Mengambil booking aktif milik pasien pada JWT dan status proses layanannya.
 
-- **Autentikasi**: tidak perlu
+- **Header**: `Authorization: Bearer <TOKEN>`
+- **MR**: diambil dari token JWT.
 
-| Parameter              | Tipe   | Wajib | Keterangan                        |
-| ---------------------- | ------ | :---: | --------------------------------- |
-| `fs_kd_layanan`        | string |   ✔   | Kode layanan                      |
-| `fs_kd_petugas_medis`  | string |   ✔   | Kode dokter                       |
-| `fs_kd_antrian`        | string |       | No. antrian pasien (opsional)     |
-| `tanggal`              | string |       | `YYYY-MM-DD` (default hari ini)   |
+| Parameter       | Tipe   | Wajib | Keterangan |
+| --------------- | ------ | :---: | ---------- |
+| `fs_kd_antrian` | string |       | Memilih booking aktif milik pasien yang login |
 
-**Response `200`** (`status_pasien`: `0` belum terdaftar, `1` terdaftar/menuju
-triage, `2` triage selesai/menunggu poli, `3` poli selesai/menuju farmasi)
+`status_pasien`: `0` booking belum terdaftar, `1` terdaftar/menuju triage,
+`2` triage selesai/menunggu poli, `3` pelayanan poli tercatat selesai.
 
 ```json
 {
     "status": true,
-    "data": { "sedang_dilayani": 12, "status_pasien": 1 }
+    "data": {
+        "antrean": {
+            "no_booking": "BO...",
+            "no_antrian": "AN...",
+            "no_urut": 1,
+            "tanggal_periksa": "YYYY-MM-DD",
+            "nama_poli": "Nama Poli",
+            "nama_dokter": "Nama Dokter"
+        },
+        "status_pasien": 0,
+        "status_text": "Booking, belum terdaftar",
+        "sedang_dilayani": null,
+        "nomor_terakhir_dilayani": null,
+        "jumlah_di_depan": null,
+        "lokasi_poli": null
+    }
 }
 ```
 
-### ~~BPJS~~
+`sedang_dilayani` dan `lokasi_poli` belum memiliki sumber data terverifikasi.
+`nomor_terakhir_dilayani` hanya menunjukkan nomor terakhir pada rekam medis
+poli, bukan nomor panggilan langsung. Nilai antrean untuk hari ini perlu
+diverifikasi pada database SIMRS.
 
-#### ~~POST /bpjs/registrasi~~
+### BPJS
 
-~~Melengkapi data HP dan rujukan BPJS untuk booking pasien.~~
+#### POST /bpjs/registrasi
+
+Melengkapi data HP dan rujukan BPJS untuk booking pasien milik akun yang login.
 
 - **Header**: `Authorization: Bearer <TOKEN>`
+- `fs_mr` harus cocok dengan MR pada token dan `fs_kd_trs` harus merupakan booking aktif milik pasien tersebut.
 
 | Parameter         | Tipe   | Wajib | Keterangan              |
 | ----------------- | ------ | :---: | ----------------------- |
@@ -405,12 +462,12 @@ Daftar nomor antrean apotek, dipisah obat racik dan non-racik.
 
 Riwayat kunjungan/pelayanan rawat jalan pasien (paginasi 10 per halaman).
 
-- **Autentikasi**: tidak perlu
+- **Header**: `Authorization: Bearer <TOKEN>`
+- **MR**: diambil dari token JWT.
 
-| Parameter | Tipe   | Wajib | Keterangan                       |
-| --------- | ------ | :---: | -------------------------------- |
-| `fs_mr`   | string |   ✔   | No. RM (polos atau panjang)      |
-| `page`    | int    |       | Halaman (default `1`)            |
+| Parameter | Tipe | Wajib | Keterangan |
+| --------- | ---- | :---: | ---------- |
+| `page`    | int  |       | Halaman (default `1`) |
 
 **Response `200`**
 
@@ -430,11 +487,8 @@ Riwayat kunjungan/pelayanan rawat jalan pasien (paginasi 10 per halaman).
 
 Hasil pemeriksaan radiologi pasien.
 
-- **Autentikasi**: tidak perlu
-
-| Parameter | Tipe   | Wajib | Keterangan      |
-| --------- | ------ | :---: | --------------- |
-| `fs_mr`   | string |   ✔   | No. RM          |
+- **Header**: `Authorization: Bearer <TOKEN>`
+- **MR**: diambil dari token JWT.
 
 **Response `200`**
 
@@ -451,12 +505,12 @@ Hasil pemeriksaan radiologi pasien.
 
 Daftar transaksi pemeriksaan laboratorium pasien (paginasi 10 per halaman).
 
-- **Autentikasi**: tidak perlu
+- **Header**: `Authorization: Bearer <TOKEN>`
+- **MR**: diambil dari token JWT.
 
-| Parameter | Tipe   | Wajib | Keterangan      |
-| --------- | ------ | :---: | --------------- |
-| `fs_mr`   | string |   ✔   | No. RM          |
-| `page`    | int    |       | Default `1`     |
+| Parameter | Tipe | Wajib | Keterangan |
+| --------- | ---- | :---: | ---------- |
+| `page`    | int  |       | Default `1` |
 
 **Response `200`**
 
@@ -472,7 +526,8 @@ Daftar transaksi pemeriksaan laboratorium pasien (paginasi 10 per halaman).
 
 Detail hasil satu transaksi laboratorium.
 
-- **Autentikasi**: tidak perlu
+- **Header**: `Authorization: Bearer <TOKEN>`
+- Transaksi hanya mengembalikan hasil jika terhubung ke MR pada JWT.
 
 | Parameter   | Tipe   | Wajib | Keterangan          |
 | ----------- | ------ | :---: | ------------------- |
@@ -551,10 +606,10 @@ dijalankan dengan REST Client VS Code / JetBrains HTTP Client).
 
 ```bash
 # Login
-curl -X POST "http://localhost/pkug-onlineapi/index.php/api/auth/login" \
-  -d "fs_email=pasien@mail.com" -d "fs_password=rahasia123"
+curl -X POST "http://localhost/<nama-folder-project>/index.php/api/auth/login" \
+  -d "fs_email=<email-pasien>" -d "fs_password=<password>"
 
 # Akses endpoint terproteksi
-curl "http://localhost/pkug-onlineapi/index.php/api/booking/aktif" \
+curl "http://localhost/<nama-folder-project>/index.php/api/booking/aktif" \
   -H "Authorization: Bearer <TOKEN>"
 ```

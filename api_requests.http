@@ -1,9 +1,8 @@
-# @baseUrl = http://localhost:8000/index.php/api
-# Jika menggunakan XAMPP/Laragon standard (bukan php -S), ubah baseUrl menjadi:
-@baseUrl = http://localhost/pkug-onlineapi/index.php/api
+# Ganti nama folder sesuai folder proyek di web root Laragon/XAMPP.
+@baseUrl = http://localhost/pkug-onlineapi-master/index.php/api
 
-# Ganti nilai token ini setelah melakukan request Login
-@token = eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vMTI3LjAuMC4xL3BrdWctb25saW5lYXBpLyIsImF1ZCI6Imh0dHA6Ly8xMjcuMC4wLjEvcGt1Zy1vbmxpbmVhcGkvIiwiaWF0IjoxNzc5NzcyNDMzLCJleHAiOjE3Nzk4NTg4MzMsImRhdGEiOnsidXNlcm5hbWUiOiJhZG1pbiJ9fQ.OiK-1UFETIFzUc6DASWk0gOFk_iSh89tcAYD2sac6-w
+# Tempel token hasil login di sini. Jangan commit token pribadi.
+@token = <JWT-hasil-login>
 
 ###
 # 1. Login
@@ -11,8 +10,8 @@
 POST {{baseUrl}}/auth/login
 Content-Type: application/x-www-form-urlencoded
 
-username=admin
-&password=admin123
+username=<email-atau-NIK-pasien>
+&password=<password>
 
 ###
 # 2. Daftar Dokter Berdasarkan Layanan (Poli)
@@ -28,19 +27,19 @@ Authorization: Bearer {{token}}
 
 ###
 # 4. Simpan Booking Antrian
-# Melakukan pendaftaran/booking jadwal dokter
+# Mengubah database. Jalankan hanya dengan data uji dan jadwal valid.
 POST {{baseUrl}}/booking/simpan
 Authorization: Bearer {{token}}
 Content-Type: application/x-www-form-urlencoded
 
-fs_mr=001234
-&fd_tgl_lahir=1990-01-01
-&fs_kd_layanan=P001
-&fs_kd_petugas_medis=S001
-&fn_hari=2
-&fd_tgl_antrian=2026-06-01
-&fs_kd_sesion_poli=1
-&fs_jam_mulai=08:00
+fs_mr=<MR-yang-cocok-dengan-token>
+&fd_tgl_lahir=<YYYY-MM-DD>
+&fs_kd_layanan=<kode-poli>
+&fs_kd_petugas_medis=<kode-dokter>
+&fn_hari=<hari-jadwal>
+&fd_tgl_antrian=<tanggal-jadwal-mendatang>
+&fs_kd_sesion_poli=<kode-sesi>
+&fs_jam_mulai=<HH:MM>
 
 ###
 # 5. Update Registrasi BPJS
@@ -49,11 +48,11 @@ POST {{baseUrl}}/bpjs/registrasi
 Authorization: Bearer {{token}}
 Content-Type: application/x-www-form-urlencoded
 
-fs_kd_trs=BO1234567A
-&fs_mr=001234
-&fs_no_hp=081234567890
-&fs_kd_identitas=3401234567890001
-&fs_kd_reff=0123456789012345678
+fs_kd_trs=<nomor-booking>
+&fs_mr=<MR-yang-cocok-dengan-token>
+&fs_no_hp=<nomor-telepon>
+&fs_kd_identitas=<identitas-opsional>
+&fs_kd_reff=<nomor-rujukan-opsional>
 
 ###
 # 6. Data Beranda pasien dari identitas JWT
@@ -63,4 +62,29 @@ Authorization: Bearer {{token}}
 ###
 # 7. Antrean aktif pasien dari identitas JWT
 GET {{baseUrl}}/antrean
+Authorization: Bearer {{token}}
+
+###
+# 8. Booking aktif
+GET {{baseUrl}}/booking/aktif
+Authorization: Bearer {{token}}
+
+###
+# 9. Riwayat pasien (MR diambil dari JWT)
+GET {{baseUrl}}/riwayat/list?page=1
+Authorization: Bearer {{token}}
+
+###
+# 10. Hasil radiologi pasien (MR diambil dari JWT)
+GET {{baseUrl}}/penunjang/radiologi
+Authorization: Bearer {{token}}
+
+###
+# 11. Daftar hasil laboratorium pasien (MR diambil dari JWT)
+GET {{baseUrl}}/penunjang/laboratorium?page=1
+Authorization: Bearer {{token}}
+
+###
+# 12. Detail laboratorium, hanya jika transaksi milik pasien di token
+GET {{baseUrl}}/penunjang/laboratorium_detail?fs_kd_trs=<nomor-transaksi-milik-pasien>
 Authorization: Bearer {{token}}

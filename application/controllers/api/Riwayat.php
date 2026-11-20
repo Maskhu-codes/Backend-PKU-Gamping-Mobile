@@ -8,24 +8,33 @@ class Riwayat extends RestController
     public function __construct()
     {
         parent::__construct();
+        $this->load->helper('jwt');
         $this->load->database();
     }
 
     public function list_get()
     {
-        $fs_mr = $this->get('fs_mr');
-        $page = (int)$this->get('page') ?: 1;
-        $limit = 10;
-        $offset = ($page - 1) * $limit;
-
-        if (!$fs_mr) {
-            $this->response(['status' => false, 'message' => 'MR tidak valid'], RestController::HTTP_BAD_REQUEST);
+        $authorization = $this->input->get_request_header('Authorization');
+        if (!$authorization || !preg_match('/Bearer\s+(\S+)/', $authorization, $matches)) {
+            $this->response(['status' => false, 'message' => 'Unauthorized Access'], RestController::HTTP_UNAUTHORIZED);
             return;
         }
 
-        if (strlen($fs_mr) <= 10) {
-            $fs_mr = number_format(347104100000000 + $fs_mr, 0, "", "");
+        $decoded = verify_jwt($matches[1]);
+        if (!$decoded) {
+            $this->response(['status' => false, 'message' => 'Unauthorized Access'], RestController::HTTP_UNAUTHORIZED);
+            return;
         }
+
+        $fs_mr = isset($decoded->data->fs_mr) ? normalize_patient_mr($decoded->data->fs_mr) : null;
+        if (!$fs_mr) {
+            $this->response(['status' => false, 'message' => 'Pasien belum memiliki RM'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        $page = max(1, (int) $this->get('page'));
+        $limit = 10;
+        $offset = ($page - 1) * $limit;
 
         $sql_count = "
             SELECT COUNT(*) AS total

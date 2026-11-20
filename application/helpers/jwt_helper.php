@@ -3,7 +3,12 @@ use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
 function get_jwt_key() {
-    return 'PKUG_ONLINE_API_SECRET_KEY';
+    $key = getenv('JWT_SECRET');
+    if ($key === false || strlen($key) < 32) {
+        throw new RuntimeException('JWT_SECRET must be configured and contain at least 32 characters');
+    }
+
+    return $key;
 }
 
 function generate_jwt($payload) {

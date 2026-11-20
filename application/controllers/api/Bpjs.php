@@ -27,10 +27,12 @@ class Bpjs extends RestController {
     }
 
     public function registrasi_post() {
-        if (!$this->_verify()) return;
+        $decoded = $this->_verify();
+        if (!$decoded) return;
 
         $fs_kd_trs = $this->post('fs_kd_trs');
-        $fs_mr = $this->post('fs_mr');
+        $fs_mr = isset($decoded->data->fs_mr) ? normalize_patient_mr($decoded->data->fs_mr) : null;
+        $posted_mr = normalize_patient_mr($this->post('fs_mr'));
         $fs_no_hp = $this->post('fs_no_hp');
         $fs_kd_identitas = $this->post('fs_kd_identitas');
         $fs_kd_reff = $this->post('fs_kd_reff');
@@ -40,10 +42,31 @@ class Bpjs extends RestController {
             return;
         }
 
+        if (empty($posted_mr) || $posted_mr !== $fs_mr) {
+            $this->response(['status' => false, 'message' => 'Nomor MR tidak sesuai dengan akun yang sedang login'], RestController::HTTP_FORBIDDEN);
+            return;
+        }
+
+        $booking = $this->db->query(
+            "SELECT FS_KD_TRS
+             FROM TA_TRS_BOOKING
+             WHERE FS_KD_TRS = ? AND FS_MR = ? AND FD_TGL_VOID = '3000-01-01'",
+            [$fs_kd_trs, $fs_mr]
+        )->row_array();
+        if (!$booking) {
+            $this->response(['status' => false, 'message' => 'Booking aktif tidak ditemukan untuk pasien ini'], RestController::HTTP_NOT_FOUND);
+            return;
+        }
+
         $this->db->trans_start();
 
         $this->db->query("UPDATE TC_MR SET FS_TLP_PASIEN = ?, FS_NO_HP = ? WHERE FS_MR = ?", [$fs_no_hp, $fs_no_hp, $fs_mr]);
-        $this->db->query("UPDATE TA_TRS_BOOKING SET FS_TLP_PASIEN_BOOK = ?, FS_KETERANGAN = ?, fs_no_rujukan_bpjs = ? WHERE FS_KD_TRS = ?", [$fs_no_hp, $fs_kd_identitas, $fs_kd_reff, $fs_kd_trs]);
+        $this->db->query(
+            "UPDATE TA_TRS_BOOKING
+             SET FS_TLP_PASIEN_BOOK = ?, FS_KETERANGAN = ?, fs_no_rujukan_bpjs = ?
+             WHERE FS_KD_TRS = ? AND FS_MR = ? AND FD_TGL_VOID = '3000-01-01'",
+            [$fs_no_hp, $fs_kd_identitas, $fs_kd_reff, $fs_kd_trs, $fs_mr]
+        );
 
         $this->db->trans_complete();
 

@@ -8,17 +8,30 @@ class Penunjang extends RestController
     public function __construct()
     {
         parent::__construct();
+        $this->load->helper('jwt');
         $this->load->database();
     }
 
     private function get_mr()
     {
-        $fs_mr = $this->get('fs_mr');
-        if (!$fs_mr) return false;
-        
-        if (strlen($fs_mr) <= 10) {
-            return number_format(347104100000000 + $fs_mr, 0, "", "");
+        $authorization = $this->input->get_request_header('Authorization');
+        if (!$authorization || !preg_match('/Bearer\s+(\S+)/', $authorization, $matches)) {
+            $this->response(['status' => false, 'message' => 'Unauthorized Access'], RestController::HTTP_UNAUTHORIZED);
+            return false;
         }
+
+        $decoded = verify_jwt($matches[1]);
+        if (!$decoded) {
+            $this->response(['status' => false, 'message' => 'Unauthorized Access'], RestController::HTTP_UNAUTHORIZED);
+            return false;
+        }
+
+        $fs_mr = isset($decoded->data->fs_mr) ? normalize_patient_mr($decoded->data->fs_mr) : null;
+        if (!$fs_mr) {
+            $this->response(['status' => false, 'message' => 'Pasien belum memiliki RM'], RestController::HTTP_BAD_REQUEST);
+            return false;
+        }
+
         return $fs_mr;
     }
 
@@ -26,7 +39,6 @@ class Penunjang extends RestController
     {
         $fs_mr = $this->get_mr();
         if (!$fs_mr) {
-            $this->response(['status' => false, 'message' => 'MR tidak valid'], RestController::HTTP_BAD_REQUEST);
             return;
         }
 
@@ -53,11 +65,10 @@ class Penunjang extends RestController
     {
         $fs_mr = $this->get_mr();
         if (!$fs_mr) {
-            $this->response(['status' => false, 'message' => 'MR tidak valid'], RestController::HTTP_BAD_REQUEST);
             return;
         }
 
-        $page = (int) $this->get('page') ?: 1;
+        $page = max(1, (int) $this->get('page'));
         $limit = 10;
         $offset = ($page - 1) * $limit;
         $row_start = $offset + 1;
@@ -87,6 +98,11 @@ class Penunjang extends RestController
 
     public function laboratorium_detail_get()
     {
+        $fs_mr = $this->get_mr();
+        if (!$fs_mr) {
+            return;
+        }
+
         $fs_kd_trs = $this->get('fs_kd_trs');
         if (!$fs_kd_trs) {
             $this->response(['status' => false, 'message' => 'ID Transaksi diperlukan'], RestController::HTTP_BAD_REQUEST);
@@ -98,12 +114,17 @@ class Penunjang extends RestController
                    bb.FS_HASIL as hasil, bb.FS_SATUAN as satuan, bb.FS_NILAI_RUJUKAN as nilai_rujukan, bb.FS_FLAG_HASIL as flag
             FROM HOSPITAL.dbo.TA_TRS_TDK_UMUM5 bb 
             LEFT JOIN HOSPITAL.dbo.TA_JENIS_PEMERIKSAAN dd ON bb.FS_KD_JENIS_PEMERIKSAAN = dd.fs_kd_jenis_pemeriksaan 
+            INNER JOIN HOSPITAL.dbo.TA_TRS_TDK_UMUM aa ON bb.FS_KD_TRS = aa.FS_KD_TRS
+            INNER JOIN HOSPITAL.dbo.TA_REGISTRASI c ON aa.FS_KD_REG = c.FS_KD_REG
             WHERE bb.FS_KD_TRS = ? 
+                AND c.FS_MR = ?
+                AND aa.FD_TGL_VOID = '3000-01-01'
+                AND c.FD_TGL_VOID = '3000-01-01'
                 AND CAST(bb.FS_HASIL AS VARCHAR(MAX)) <> '' 
                 AND CAST(bb.FS_HASIL AS VARCHAR(MAX)) <> 'HASIL MENYUSUL' 
         ";
 
-        $data = $this->db->query($sql, [$fs_kd_trs])->result_array();
+        $data = $this->db->query($sql, [$fs_kd_trs, $fs_mr])->result_array();
 
         $this->response([
             'status' => true,
