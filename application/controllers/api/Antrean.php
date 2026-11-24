@@ -41,7 +41,7 @@ class Antrean extends RestController
         }
 
         $today = date('Y-m-d');
-        $fs_kd_antrian = $this->get('fs_kd_antrian');
+        $fs_kd_antrian = trim((string) $this->get('fs_kd_antrian'));
         $sql_booking = "
             SELECT TOP 1
                 a.FS_KD_TRS AS no_booking,
