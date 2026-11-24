@@ -85,7 +85,7 @@ environment proses PHP/Apache Laragon, lalu restart Apache:
 | `JWT_SECRET` | Secret HS256 acak, minimal 32 karakter |
 | `DB_HOSPITAL_HOST`, `DB_HOSPITAL_USERNAME`, `DB_HOSPITAL_PASSWORD` | SQL Server SIMRS |
 | `DB_LOCAL_HOST`, `DB_LOCAL_USERNAME`, `DB_LOCAL_PASSWORD` | Database akun online |
-| `DB_FARMASI_HOST`, `DB_FARMASI_USERNAME`, `DB_FARMASI_PASSWORD` | Database antrean farmasi |
+| `DB_FARMASI_HOST`, `DB_FARMASI_USERNAME`, `DB_FARMASI_PASSWORD` | Database antrean farmasi (wajib hanya untuk endpoint Farmasi) |
 | `DB_HOSPITAL_DATABASE`, `DB_LOCAL_DATABASE`, `DB_FARMASI_DATABASE` | Opsional; default `HOSPITAL`, `pkug_online`, `antrian` |
 
 Untuk melihat nama kolom tabel SIMRS yang dipakai API, jalankan `php db_test.php`
