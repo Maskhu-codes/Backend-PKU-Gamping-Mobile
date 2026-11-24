@@ -48,37 +48,24 @@ class Auth extends RestController
     // ─── POST /auth/login ────────────────────────────────────────────────────
     public function login_post()
     {
-        $identifier  = $this->post('fs_email') ?: $this->post('username') ?: $this->post('identifier') ?: $this->post('fs_nik') ?: $this->post('fs_mr');
-        $fs_password = $this->post('fs_password') ?: $this->post('password');
+        $fs_email    = trim((string)($this->post('fs_email') ?: $this->post('email')));
+        $fs_password = (string)($this->post('fs_password') ?: $this->post('password'));
 
-        if (empty($identifier) || empty($fs_password)) {
-            $this->response(['status' => false, 'message' => 'Email / NIK / No. RM dan password wajib diisi'], RestController::HTTP_BAD_REQUEST);
+        if (empty($fs_email) || empty($fs_password)) {
+            $this->response(['status' => false, 'message' => 'Email dan password wajib diisi'], RestController::HTTP_BAD_REQUEST);
             return;
         }
 
-        $clean_id = trim($identifier);
-
-        // Cari akun di DB lokal berdasarkan Email, NIK, atau No. RM
+        // Cari akun di DB lokal murni berdasarkan Email
         $user = $this->db_local->query(
             "SELECT fs_id, fs_mr, fs_email, fs_password_hash, fs_nik, fb_is_active
              FROM ta_user_pasien
-             WHERE fs_email = ? OR fs_nik = ? OR fs_mr = ?",
-            [$clean_id, $clean_id, $clean_id]
+             WHERE fs_email = ?",
+            [$fs_email]
         )->row_array();
 
-        // Jika tidak ditemukan dan input adalah angka pendek (No. RM SIMRS), coba cek format RM 15-digit
-        if (!$user && is_numeric($clean_id) && strlen($clean_id) <= 10) {
-            $formatted_mr = number_format(347104100000000 + (float)$clean_id, 0, '', '');
-            $user = $this->db_local->query(
-                "SELECT fs_id, fs_mr, fs_email, fs_password_hash, fs_nik, fb_is_active
-                 FROM ta_user_pasien
-                 WHERE fs_mr = ?",
-                [$formatted_mr]
-            )->row_array();
-        }
-
         if (!$user) {
-            $this->response(['status' => false, 'message' => 'Email / NIK / No. RM atau password salah'], RestController::HTTP_UNAUTHORIZED);
+            $this->response(['status' => false, 'message' => 'Email atau password salah'], RestController::HTTP_UNAUTHORIZED);
             return;
         }
 
@@ -88,18 +75,21 @@ class Auth extends RestController
         }
 
         if (!password_verify($fs_password, $user['fs_password_hash'])) {
-            $this->response(['status' => false, 'message' => 'Email / NIK / No. RM atau password salah'], RestController::HTTP_UNAUTHORIZED);
+            $this->response(['status' => false, 'message' => 'Email atau password salah'], RestController::HTTP_UNAUTHORIZED);
             return;
         }
 
-        // Ambil nama dari SIMRS jika ada fs_mr
+        // Sanitasi Nomor Rekam Medis (15-digit real SIMRS, hapus '-' dan spasi)
+        $clean_mr = !empty($user['fs_mr']) ? str_replace(['-', ' '], '', trim($user['fs_mr'])) : '';
+
+        // Ambil nama resmi pasien dari SIMRS jika ada fs_mr
         $fs_nm_pasien = '';
-        if (!empty($user['fs_mr'])) {
+        if (!empty($clean_mr)) {
             $simrs_data = $this->db_simrs->query(
                 "SELECT FS_NM_PASIEN FROM TC_MR WHERE FS_MR = ?",
-                [$user['fs_mr']]
+                [$clean_mr]
             )->row_array();
-            $fs_nm_pasien = $simrs_data ? $simrs_data['FS_NM_PASIEN'] : '';
+            $fs_nm_pasien = $simrs_data ? trim($simrs_data['FS_NM_PASIEN']) : '';
         }
 
         $payload = [
@@ -108,10 +98,10 @@ class Auth extends RestController
             'iat'  => time(),
             'exp'  => time() + (3600 * 24), // 24 jam
             'data' => [
-                'fs_id'       => $user['fs_id'],
-                'fs_mr'       => $user['fs_mr'],
-                'fs_email'    => $user['fs_email'],
-                'fs_nik'      => $user['fs_nik'],
+                'fs_id'        => $user['fs_id'],
+                'fs_mr'        => $clean_mr,
+                'fs_email'     => $user['fs_email'],
+                'fs_nik'       => $user['fs_nik'],
                 'fs_nm_pasien' => $fs_nm_pasien,
             ]
         ];
@@ -386,29 +376,33 @@ class Auth extends RestController
         }
 
         // Ambil data medis dari SIMRS jika ada fs_mr
+        $clean_mr = !empty($user['fs_mr']) ? str_replace(['-', ' '], '', trim($user['fs_mr'])) : '';
         $simrs_data = null;
-        if (!empty($user['fs_mr'])) {
+        if (!empty($clean_mr)) {
             $simrs_data = $this->db_simrs->query(
                 "SELECT FS_MR, FS_NM_PASIEN, FD_TGL_LAHIR, FS_JNS_KELAMIN,
-                        FS_GOL_DARAH, FS_ALM_PASIEN, FS_TLP_PASIEN, FS_TLP_PASIEN,
+                        FS_GOL_DARAH, FS_ALM_PASIEN, FS_TLP_PASIEN,
                         FS_KD_STATUS_KAWIN_DK, FS_KD_AGAMA, FS_KD_PENDIDIKAN_DK, 
                         FS_KD_PEKERJAAN_DK, FS_TEMP_LAHIR, FS_KD_IDENTITAS, FS_KD_KELURAHAN, FS_ALERGI,
                         FS_RIW_PENYAKIT_DAHULU
                  FROM TC_MR
                  WHERE FS_MR = ?",
-                [$user['fs_mr']]
+                [$clean_mr]
             )->row_array();
+            if ($simrs_data && isset($simrs_data['FS_MR'])) {
+                $simrs_data['FS_MR'] = str_replace(['-', ' '], '', trim($simrs_data['FS_MR']));
+            }
         }
 
         $this->response([
             'status' => true,
             'data'   => [
-                'fs_id'        => $user['fs_id'],
-                'fs_mr'        => $user['fs_mr'],
-                'fs_email'     => $user['fs_email'],
-                'fs_nik'       => $user['fs_nik'],
+                'fs_id'         => $user['fs_id'],
+                'fs_mr'         => $clean_mr,
+                'fs_email'      => $user['fs_email'],
+                'fs_nik'        => $user['fs_nik'],
                 'fd_created_at' => $user['fd_created_at'],
-                'simrs'        => $simrs_data,
+                'simrs'         => $simrs_data,
             ]
         ], RestController::HTTP_OK);
     }

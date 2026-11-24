@@ -29,14 +29,14 @@ class Booking extends RestController {
     public function simpan_post() {
         if (!$this->_verify()) return;
 
-        $fs_mr = $this->post('fs_mr');
-        $fd_tgl_lahir = $this->post('fd_tgl_lahir');
-        $fs_kd_layanan = $this->post('fs_kd_layanan');
-        $fs_kd_petugas_medis = $this->post('fs_kd_petugas_medis');
-        $fn_hari = $this->post('fn_hari');
-        $fd_tgl_antrian = $this->post('fd_tgl_antrian');
-        $fs_kd_sesion_poli = $this->post('fs_kd_sesion_poli');
-        $fs_jam_mulai = $this->post('fs_jam_mulai');
+        $fs_mr = str_replace(['-', ' '], '', trim((string)$this->post('fs_mr')));
+        $fd_tgl_lahir = trim((string)$this->post('fd_tgl_lahir'));
+        $fs_kd_layanan = trim((string)$this->post('fs_kd_layanan'));
+        $fs_kd_petugas_medis = trim((string)$this->post('fs_kd_petugas_medis'));
+        $fn_hari = trim((string)$this->post('fn_hari'));
+        $fd_tgl_antrian = trim((string)$this->post('fd_tgl_antrian'));
+        $fs_kd_sesion_poli = trim((string)$this->post('fs_kd_sesion_poli'));
+        $fs_jam_mulai = trim((string)$this->post('fs_jam_mulai'));
 
         if (empty($fs_mr) || empty($fd_tgl_lahir) || empty($fs_kd_layanan) || empty($fs_kd_petugas_medis) || empty($fd_tgl_antrian)) {
             $this->response(['status' => false, 'message' => 'Missing required fields'], RestController::HTTP_BAD_REQUEST);
@@ -49,7 +49,7 @@ class Booking extends RestController {
         if (strlen($fs_mr) > 10) {
             $fs_mr_full = $fs_mr;
         } else {
-            $fs_mr_full = number_format(347104100000000 + $fs_mr, 0, "", "");
+            $fs_mr_full = number_format(347104100000000 + (float)$fs_mr, 0, "", "");
         }
 
         $q_mr = $this->db->query(
@@ -159,6 +159,11 @@ class Booking extends RestController {
             [$fs_mr_full]
         )->row_array();
 
+        $px_nm        = $q_px ? $q_px['FS_NM_PASIEN'] : '';
+        $px_alm       = $q_px ? $q_px['FS_ALM_PASIEN'] : '';
+        $px_tlp       = $q_px ? $q_px['FS_TLP_PASIEN'] : '';
+        $px_tgl_lahir = $q_px ? $q_px['FD_TGL_LAHIR'] : $fd_tgl_lahir;
+
         $this->db->query(
             "INSERT INTO ta_trs_booking (
                 fs_kd_trs, fd_tgl_trs, fs_jam_trs, fs_kd_petugas, fs_mr, fs_nm_pasien_book, 
@@ -176,8 +181,8 @@ class Booking extends RestController {
                 ' ', '00:00', 'OL', ?
              )",
             [
-                $NOBOOKING, $today, $timetoday, $fs_mr_full, $q_px['FS_NM_PASIEN'],
-                $q_px['FS_ALM_PASIEN'], $q_px['FS_TLP_PASIEN'], $q_px['FD_TGL_LAHIR'], $fs_kd_layanan,
+                $NOBOOKING, $today, $timetoday, $fs_mr_full, $px_nm,
+                $px_alm, $px_tlp, $px_tgl_lahir, $fs_kd_layanan,
                 $fs_kd_petugas_medis, $fd_tgl_antrian, $fs_kd_sesion_poli, $fs_jam_mulai, $NOANTRIAN
             ]
         );
@@ -193,7 +198,7 @@ class Booking extends RestController {
                 ?, ?
              )",
             [
-                $NOANTRIAN, $today, $timetoday, $fs_mr_full, $q_px['FS_NM_PASIEN'],
+                $NOANTRIAN, $today, $timetoday, $fs_mr_full, $px_nm,
                 $fs_kd_layanan, $fs_kd_petugas_medis, $fd_tgl_antrian, $fs_kd_sesion_poli,
                 $fs_jam_mulai, $NOURUT
             ]
@@ -230,7 +235,8 @@ class Booking extends RestController {
         $decoded = $this->_verify();
         if (!$decoded) return;
 
-        $fs_mr = $decoded->data->fs_mr;
+        $raw_mr = (string)$decoded->data->fs_mr;
+        $fs_mr = str_replace(['-', ' '], '', trim($raw_mr));
         if (empty($fs_mr)) {
             $this->response(['status' => false, 'message' => 'Pasien belum memiliki RM'], RestController::HTTP_BAD_REQUEST);
             return;
@@ -239,7 +245,7 @@ class Booking extends RestController {
         if (strlen($fs_mr) > 10) {
             $fs_mr_full = $fs_mr;
         } else {
-            $fs_mr_full = number_format(347104100000000 + $fs_mr, 0, "", "");
+            $fs_mr_full = number_format(347104100000000 + (float)$fs_mr, 0, "", "");
         }
 
         $today = date('Y-m-d');

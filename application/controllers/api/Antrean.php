@@ -16,8 +16,8 @@ class Antrean extends RestController
     {
         $fs_kd_layanan = $this->get('fs_kd_layanan');
         $fs_kd_medis = $this->get('fs_kd_petugas_medis');
-        $fs_mr = $this->get('fs_mr');
-        $fs_kd_antrian = $this->get('fs_kd_antrian');
+        $fs_mr = str_replace(['-', ' '], '', trim((string)$this->get('fs_mr')));
+        $fs_kd_antrian = trim((string)$this->get('fs_kd_antrian'));
         $tanggal = $this->get('tanggal') ?: date('Y-m-d');
 
         if (!$fs_kd_layanan || !$fs_kd_medis) {
