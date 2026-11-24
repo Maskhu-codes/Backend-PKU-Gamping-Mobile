@@ -56,7 +56,12 @@ $route['translate_uri_dashes'] = FALSE;
 // Kebab-case to camelCase route aliases for API
 $route['api/auth/send-otp']['POST'] = 'api/auth/sendOtp';
 $route['api/auth/verify-otp']['POST'] = 'api/auth/verifyOtp';
+$route['api/auth/verifyOtp']['POST'] = 'api/auth/verifyOtp';
 $route['api/auth/forgot-password']['POST'] = 'api/auth/forgotPassword';
+$route['api/auth/forgotPassword']['POST'] = 'api/auth/forgotPassword';
+$route['api/auth/resend-otp']['POST'] = 'api/auth/resendOtp';
+$route['api/auth/resendOtp']['POST'] = 'api/auth/resendOtp';
 $route['api/auth/reset-password']['POST'] = 'api/auth/resetPassword';
+$route['api/auth/resetPassword']['POST'] = 'api/auth/resetPassword';
 $route['api/user/fcm-token']['POST'] = 'api/auth/fcmToken';
 $route['api/auth/cek-nik']['POST'] = 'api/auth/cekNik';

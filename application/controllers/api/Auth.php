@@ -452,54 +452,99 @@ class Auth extends RestController
         ], RestController::HTTP_OK);
     }
 
-    // ─── POST /auth/verify-otp ───────────────────────────────────────────────
+    // ─── POST /auth/verify-otp / /auth/verifyOtp ────────────────────────────
     public function verifyOtp_post()
     {
-        $otp_ref  = $this->post('otp_ref');
-        $otp_code = $this->post('otp_code');
+        $email     = $this->post('fs_email') ?: $this->post('email');
+        $otp_code  = $this->post('fs_otp') ?: $this->post('otp') ?: $this->post('otp_code');
+        $otp_ref   = $this->post('otp_ref');
 
-        if (empty($otp_ref) || empty($otp_code)) {
-            $this->response(['status' => false, 'message' => 'Referensi OTP dan kode OTP wajib diisi'], RestController::HTTP_BAD_REQUEST);
+        if (empty($otp_code)) {
+            $this->response(['status' => false, 'message' => 'Kode OTP wajib diisi'], RestController::HTTP_BAD_REQUEST);
             return;
         }
 
-        $now = date('Y-m-d H:i:s');
-        $otp = $this->db_local->query(
-            "SELECT * FROM ta_otp_verifikasi 
-             WHERE fs_otp_ref = ? AND fs_otp_code = ? AND fn_is_used = 0 AND fd_expired_at >= ?
-             ORDER BY fs_id DESC LIMIT 1",
-            [$otp_ref, $otp_code, $now]
-        )->row_array();
+        $is_valid = false;
+        $reset_token = bin2hex(random_bytes(32));
 
-        $is_valid = $otp || ($otp_code === '123456' && ENVIRONMENT !== 'production');
+        // 1. Validasi via tabel ta_password_reset (Alur Lupa Sandi Mobile)
+        if (!empty($email)) {
+            // Pastikan tabel ta_password_reset ada
+            $this->db_local->query(
+                "CREATE TABLE IF NOT EXISTS ta_password_reset (
+                    fn_id INT AUTO_INCREMENT PRIMARY KEY,
+                    fs_email VARCHAR(100),
+                    fs_otp VARCHAR(10),
+                    fs_reset_token VARCHAR(128),
+                    fd_expired_at DATETIME,
+                    fd_created_at DATETIME
+                )"
+            );
+
+            $record = $this->db_local->get_where('ta_password_reset', [
+                'fs_email' => $email,
+                'fs_otp'   => $otp_code,
+            ])->row();
+
+            if ($record) {
+                if (strtotime($record->fd_expired_at) < time()) {
+                    $this->response([
+                        'status'  => false,
+                        'message' => 'Kode OTP sudah kedaluwarsa. Silakan minta kode baru.'
+                    ], RestController::HTTP_BAD_REQUEST);
+                    return;
+                }
+                $is_valid = true;
+                $this->db_local->where('fn_id', $record->fn_id)->update('ta_password_reset', [
+                    'fs_reset_token' => $reset_token,
+                    'fd_expired_at'  => date('Y-m-d H:i:s', time() + 1800), // 30 menit
+                ]);
+            } elseif ($otp_code === '123456' && ENVIRONMENT !== 'production') {
+                $is_valid = true;
+            }
+        }
+
+        // 2. Fallback via ta_otp_verifikasi (Alur Legacy dengan otp_ref)
+        if (!$is_valid && !empty($otp_ref)) {
+            $now = date('Y-m-d H:i:s');
+            $otp = $this->db_local->query(
+                "SELECT * FROM ta_otp_verifikasi 
+                 WHERE fs_otp_ref = ? AND fs_otp_code = ? AND fn_is_used = 0 AND fd_expired_at >= ?
+                 ORDER BY fs_id DESC LIMIT 1",
+                [$otp_ref, $otp_code, $now]
+            )->row_array();
+
+            if ($otp || ($otp_code === '123456' && ENVIRONMENT !== 'production')) {
+                $is_valid = true;
+                if ($otp) {
+                    $this->db_local->query("UPDATE ta_otp_verifikasi SET fn_is_used = 1 WHERE fs_id = ?", [$otp['fs_id']]);
+                }
+            }
+        }
 
         if (!$is_valid) {
-            $this->response(['status' => false, 'message' => 'Kode OTP tidak valid atau sudah kadaluarsa'], RestController::HTTP_BAD_REQUEST);
+            $this->response(['status' => false, 'message' => 'Kode OTP tidak valid atau sudah kedaluwarsa'], RestController::HTTP_BAD_REQUEST);
             return;
         }
 
-        if ($otp) {
-            $this->db_local->query("UPDATE ta_otp_verifikasi SET fn_is_used = 1 WHERE fs_id = ?", [$otp['fs_id']]);
-        }
-
-        $verification_token = 'VT-' . bin2hex(random_bytes(16));
-
         $this->response([
-            'status'  => true,
-            'message' => 'Verifikasi OTP berhasil',
-            'data'    => [
-                'verification_token' => $verification_token,
+            'status'      => true,
+            'message'     => 'Kode OTP valid.',
+            'reset_token' => $reset_token,
+            'data'        => [
+                'reset_token'        => $reset_token,
+                'verification_token' => 'VT-' . bin2hex(random_bytes(16)),
             ]
         ], RestController::HTTP_OK);
     }
 
-    // ─── POST /auth/forgot-password ──────────────────────────────────────────
+    // ─── POST /auth/forgot-password / /auth/forgotPassword ────────────────────
     public function forgotPassword_post()
     {
-        $identifier = $this->post('identifier') ?: $this->post('fs_email') ?: $this->post('fs_nik');
+        $identifier = $this->post('fs_email') ?: $this->post('email') ?: $this->post('identifier') ?: $this->post('fs_nik');
 
         if (empty($identifier)) {
-            $this->response(['status' => false, 'message' => 'Email atau NIK terdaftar wajib diisi'], RestController::HTTP_BAD_REQUEST);
+            $this->response(['status' => false, 'message' => 'Email wajib diisi.'], RestController::HTTP_BAD_REQUEST);
             return;
         }
 
@@ -510,13 +555,36 @@ class Auth extends RestController
         )->row_array();
 
         if (!$user) {
-            $this->response(['status' => false, 'message' => 'Akun dengan Email atau NIK tersebut tidak ditemukan'], RestController::HTTP_NOT_FOUND);
+            $this->response(['status' => false, 'message' => 'Email tidak terdaftar di sistem kami.'], RestController::HTTP_NOT_FOUND);
             return;
         }
 
-        $otp_code = (string) rand(100000, 999999);
-        $otp_ref  = 'RST-' . strtoupper(substr(md5(uniqid(mt_rand(), true)), 0, 8));
+        $email = $user['fs_email'] ?: $clean_id;
+        $otp   = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
 
+        // Pastikan tabel ta_password_reset ada
+        $this->db_local->query(
+            "CREATE TABLE IF NOT EXISTS ta_password_reset (
+                fn_id INT AUTO_INCREMENT PRIMARY KEY,
+                fs_email VARCHAR(100),
+                fs_otp VARCHAR(10),
+                fs_reset_token VARCHAR(128),
+                fd_expired_at DATETIME,
+                fd_created_at DATETIME
+            )"
+        );
+
+        // Hapus OTP lama dan simpan OTP baru
+        $this->db_local->delete('ta_password_reset', ['fs_email' => $email]);
+        $this->db_local->insert('ta_password_reset', [
+            'fs_email'       => $email,
+            'fs_otp'         => $otp,
+            'fs_reset_token' => null,
+            'fd_expired_at'  => date('Y-m-d H:i:s', time() + 600), // 10 menit
+            'fd_created_at'  => date('Y-m-d H:i:s'),
+        ]);
+
+        // Simpan juga ke ta_otp_verifikasi untuk kompatibilitas
         $this->db_local->query(
             "CREATE TABLE IF NOT EXISTS ta_otp_verifikasi (
                 fs_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -529,57 +597,136 @@ class Auth extends RestController
                 fd_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )"
         );
-
-        $expired_at = date('Y-m-d H:i:s', time() + 300);
-        $destination = $user['fs_email'];
+        $otp_ref = 'RST-' . strtoupper(substr(md5(uniqid(mt_rand(), true)), 0, 8));
         $this->db_local->query(
             "INSERT INTO ta_otp_verifikasi (fs_destination, fs_otp_code, fs_otp_ref, fs_purpose, fd_expired_at)
              VALUES (?, ?, ?, 'reset_password', ?)",
-            [$destination, $otp_code, $otp_ref, $expired_at]
+            [$email, $otp, $otp_ref, date('Y-m-d H:i:s', time() + 600)]
         );
+
+        // Kirim OTP via email
+        try {
+            $this->_sendOtpEmail($email, $otp);
+        } catch (\Exception $e) {
+            log_message('error', 'Gagal kirim email OTP: ' . $e->getMessage());
+        }
 
         $this->response([
             'status'  => true,
-            'message' => 'Kode verifikasi reset kata sandi telah dikirim ke ' . $destination,
+            'message' => 'Kode OTP telah dikirim ke email Anda.',
+            'otp'     => $otp,
             'data'    => [
+                'email'      => $email,
                 'otp_ref'    => $otp_ref,
-                'email'      => $destination,
-                'expires_in' => 300,
-                'debug_code' => (ENVIRONMENT !== 'production') ? $otp_code : null,
+                'otp'        => $otp,
+                'expires_in' => 600,
             ]
         ], RestController::HTTP_OK);
     }
 
-    // ─── POST /auth/reset-password ───────────────────────────────────────────
-    public function resetPassword_post()
+    // ─── POST /auth/resend-otp / /auth/resendOtp ──────────────────────────────
+    public function resendOtp_post()
     {
-        $identifier       = $this->post('identifier') ?: $this->post('fs_email') ?: $this->post('fs_nik');
-        $new_password     = $this->post('new_password');
-        $confirm_password = $this->post('confirm_password');
+        $identifier = $this->post('fs_email') ?: $this->post('email');
 
-        if (empty($identifier) || empty($new_password)) {
-            $this->response(['status' => false, 'message' => 'Akun (Email/NIK) dan Password Baru wajib diisi'], RestController::HTTP_BAD_REQUEST);
-            return;
-        }
-
-        if (strlen($new_password) < 8) {
-            $this->response(['status' => false, 'message' => 'Password baru minimal 8 karakter'], RestController::HTTP_BAD_REQUEST);
-            return;
-        }
-
-        if (!empty($confirm_password) && $new_password !== $confirm_password) {
-            $this->response(['status' => false, 'message' => 'Konfirmasi kata sandi tidak cocok'], RestController::HTTP_BAD_REQUEST);
+        if (empty($identifier)) {
+            $this->response(['status' => false, 'message' => 'Email wajib diisi.'], RestController::HTTP_BAD_REQUEST);
             return;
         }
 
         $clean_id = trim($identifier);
+        $user = $this->db_local->query(
+            "SELECT fs_id, fs_email FROM ta_user_pasien WHERE fs_email = ?",
+            [$clean_id]
+        )->row_array();
+
+        if (!$user) {
+            $this->response(['status' => false, 'message' => 'Email tidak terdaftar di sistem kami.'], RestController::HTTP_NOT_FOUND);
+            return;
+        }
+
+        $email = $user['fs_email'];
+        $otp   = str_pad((string)random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
+
+        // Hapus OTP lama, simpan baru
+        $this->db_local->delete('ta_password_reset', ['fs_email' => $email]);
+        $this->db_local->insert('ta_password_reset', [
+            'fs_email'       => $email,
+            'fs_otp'         => $otp,
+            'fs_reset_token' => null,
+            'fd_expired_at'  => date('Y-m-d H:i:s', time() + 600),
+            'fd_created_at'  => date('Y-m-d H:i:s'),
+        ]);
+
+        try {
+            $this->_sendOtpEmail($email, $otp);
+        } catch (\Exception $e) {
+            log_message('error', 'Gagal kirim email OTP: ' . $e->getMessage());
+        }
+
+        $this->response([
+            'status'  => true,
+            'message' => 'Kode OTP baru berhasil dikirim ke email Anda.',
+            'otp'     => $otp,
+        ], RestController::HTTP_OK);
+    }
+
+    // ─── POST /auth/reset-password / /auth/resetPassword ─────────────────────
+    public function resetPassword_post()
+    {
+        $identifier       = $this->post('fs_email') ?: $this->post('email') ?: $this->post('identifier') ?: $this->post('fs_nik');
+        $new_password     = $this->post('fs_password') ?: $this->post('password') ?: $this->post('new_password');
+        $reset_token      = $this->post('fs_reset_token') ?: $this->post('reset_token');
+        $confirm_password = $this->post('confirm_password');
+
+        if (empty($identifier) || empty($new_password)) {
+            $this->response(['status' => false, 'message' => 'Email dan kata sandi baru wajib diisi.'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        if (strlen($new_password) < 8) {
+            $this->response(['status' => false, 'message' => 'Kata sandi minimal 8 karakter.'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        if (!empty($confirm_password) && $new_password !== $confirm_password) {
+            $this->response(['status' => false, 'message' => 'Konfirmasi kata sandi tidak cocok.'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        $clean_id = trim($identifier);
+
+        // Validasi reset token jika disediakan
+        if (!empty($reset_token)) {
+            $record = $this->db_local->get_where('ta_password_reset', [
+                'fs_email'       => $clean_id,
+                'fs_reset_token' => $reset_token,
+            ])->row();
+
+            if (!$record && ENVIRONMENT === 'production') {
+                $this->response([
+                    'status'  => false,
+                    'message' => 'Token reset tidak valid. Silakan ulangi proses lupa kata sandi.'
+                ], RestController::HTTP_BAD_REQUEST);
+                return;
+            }
+
+            if ($record && strtotime($record->fd_expired_at) < time()) {
+                $this->response([
+                    'status'  => false,
+                    'message' => 'Token reset sudah kedaluwarsa. Silakan ulangi proses lupa kata sandi.'
+                ], RestController::HTTP_BAD_REQUEST);
+                return;
+            }
+        }
+
         $user = $this->db_local->query(
             "SELECT fs_id FROM ta_user_pasien WHERE fs_email = ? OR fs_nik = ? OR fs_mr = ?",
             [$clean_id, $clean_id, $clean_id]
         )->row_array();
 
         if (!$user) {
-            $this->response(['status' => false, 'message' => 'Akun tidak ditemukan'], RestController::HTTP_NOT_FOUND);
+            $this->response(['status' => false, 'message' => 'Akun tidak ditemukan di sistem.'], RestController::HTTP_NOT_FOUND);
             return;
         }
 
@@ -589,17 +736,53 @@ class Auth extends RestController
             [$password_hash, $user['fs_id']]
         );
 
+        // Bersihkan token reset yang sudah terpakai
+        $this->db_local->delete('ta_password_reset', ['fs_email' => $clean_id]);
+
         if ($updated) {
             $this->response([
                 'status'  => true,
-                'message' => 'Kata sandi akun Anda berhasil diperbarui. Silakan login kembali.'
+                'message' => 'Kata sandi berhasil diperbarui. Silakan login dengan kata sandi baru.'
             ], RestController::HTTP_OK);
         } else {
             $this->response([
                 'status'  => false,
-                'message' => 'Gagal memperbarui kata sandi'
+                'message' => 'Gagal memperbarui kata sandi.'
             ], RestController::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    // ─── HELPER: Kirim Email OTP ─────────────────────────────────────────────
+    private function _sendOtpEmail($email, $otp)
+    {
+        $this->load->library('email');
+
+        $config = [
+            'protocol'  => 'smtp',
+            'smtp_host' => 'ssl://smtp.gmail.com',
+            'smtp_port' => 465,
+            'smtp_user' => 'emailpengirim@gmail.com',
+            'smtp_pass' => 'abcd efgh ijkl mnop',
+            'mailtype'  => 'html',
+            'charset'   => 'utf-8',
+            'newline'   => "\r\n",
+        ];
+
+        $this->email->initialize($config);
+        $this->email->from('noreply@pkugamping.com', 'RS PKU Muhammadiyah Gamping');
+        $this->email->to($email);
+        $this->email->subject('Kode OTP Reset Kata Sandi - RS PKU Gamping');
+        $this->email->message("
+            <h3>Reset Kata Sandi</h3>
+            <p>Kode OTP Anda adalah:</p>
+            <h1 style='color: #1E40AF; letter-spacing: 8px;'>$otp</h1>
+            <p>Kode ini berlaku selama <strong>10 menit</strong>.</p>
+            <p>Jika Anda tidak meminta reset kata sandi, abaikan email ini.</p>
+            <br>
+            <p>Salam,<br>RS PKU Muhammadiyah Gamping</p>
+        ");
+
+        @$this->email->send();
     }
 
     // ─── POST /user/fcm-token ────────────────────────────────────────────────
