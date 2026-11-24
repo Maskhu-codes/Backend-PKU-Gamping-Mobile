@@ -14,6 +14,27 @@ if (!$server || !$username || $password === false) {
     exit(1);
 }
 
+function report_sqlsrv_errors()
+{
+    $errors = sqlsrv_errors();
+    if (!$errors) {
+        fwrite(STDERR, "No SQL Server driver diagnostics were returned.\n");
+        return;
+    }
+
+    foreach ($errors as $error) {
+        fwrite(
+            STDERR,
+            sprintf(
+                "[SQLSTATE %s, code %s] %s\n",
+                $error['SQLSTATE'],
+                $error['code'],
+                trim($error['message'])
+            )
+        );
+    }
+}
+
 $connection = sqlsrv_connect($server, [
     'Database' => $database,
     'UID' => $username,
@@ -21,7 +42,8 @@ $connection = sqlsrv_connect($server, [
 ]);
 
 if (!$connection) {
-    fwrite(STDERR, "Unable to connect to the configured SQL Server.\n");
+    fwrite(STDERR, "Unable to connect to the configured SQL Server:\n");
+    report_sqlsrv_errors();
     exit(1);
 }
 
@@ -32,7 +54,8 @@ foreach ($tables as $table) {
     echo $table . " columns:\n";
     $statement = sqlsrv_query($connection, $sql, [$table]);
     if (!$statement) {
-        fwrite(STDERR, "Metadata query failed for " . $table . ".\n");
+        fwrite(STDERR, "Metadata query failed for " . $table . ":\n");
+        report_sqlsrv_errors();
         exit(1);
     }
 
