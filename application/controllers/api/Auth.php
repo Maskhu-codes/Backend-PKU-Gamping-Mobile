@@ -420,8 +420,15 @@ class Auth extends RestController
         $email   = $user['fs_email'];
         $otp     = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $otp_ref = 'RST-' . strtoupper(substr(md5(uniqid(mt_rand(), true)), 0, 8));
-        // Hapus OTP lama dan simpan OTP baru di ta_password_reset
-        $this->db_local->delete('ta_password_reset', ['fs_email' => $email]);
+        // Nonaktifkan OTP lama menjadi EXPIRED (tetap disimpan sebagai riwayat audit / log)
+        $this->db_local->query("UPDATE ta_password_reset SET fs_otp = 'EXPIRED', fs_reset_token = 'EXPIRED' WHERE fd_expired_at < NOW() AND fs_otp NOT IN ('EXPIRED', 'USED')");
+        $this->db_local->where('fs_email', $email)
+                       ->where_not_in('fs_otp', ['EXPIRED', 'USED'])
+                       ->update('ta_password_reset', [
+                           'fs_otp'         => 'EXPIRED',
+                           'fs_reset_token' => 'EXPIRED',
+                       ]);
+        // Simpan baris baru OTP aktif di ta_password_reset
         $this->db_local->insert('ta_password_reset', [
             'fs_email'       => $email,
             'fs_otp'         => $otp,
@@ -467,8 +474,15 @@ class Auth extends RestController
         $email   = $user['fs_email'];
         $otp     = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $otp_ref = 'RST-' . strtoupper(substr(md5(uniqid(mt_rand(), true)), 0, 8));
-        // Hapus OTP lama, simpan baru di ta_password_reset
-        $this->db_local->delete('ta_password_reset', ['fs_email' => $email]);
+        // Nonaktifkan OTP lama menjadi EXPIRED (tetap disimpan sebagai riwayat audit / log)
+        $this->db_local->query("UPDATE ta_password_reset SET fs_otp = 'EXPIRED', fs_reset_token = 'EXPIRED' WHERE fd_expired_at < NOW() AND fs_otp NOT IN ('EXPIRED', 'USED')");
+        $this->db_local->where('fs_email', $email)
+                       ->where_not_in('fs_otp', ['EXPIRED', 'USED'])
+                       ->update('ta_password_reset', [
+                           'fs_otp'         => 'EXPIRED',
+                           'fs_reset_token' => 'EXPIRED',
+                       ]);
+        // Simpan baris baru kirim ulang OTP
         $this->db_local->insert('ta_password_reset', [
             'fs_email'       => $email,
             'fs_otp'         => $otp,
@@ -524,6 +538,10 @@ class Auth extends RestController
         }
         // Periksa expired
         if ($record && strtotime($record->fd_expired_at) < time()) {
+            $this->db_local->where('fn_id', $record->fn_id)->update('ta_password_reset', [
+                'fs_otp'         => 'EXPIRED',
+                'fs_reset_token' => 'EXPIRED',
+            ]);
             $this->response([
                 'status'  => false,
                 'message' => 'Kode OTP sudah kedaluwarsa. Silakan minta kode baru.'
@@ -532,9 +550,10 @@ class Auth extends RestController
         }
         $reset_token        = bin2hex(random_bytes(32));
         $verification_token = 'VT-' . bin2hex(random_bytes(16));
-        // Update token reset resmi di ta_password_reset
+        // Update token reset resmi di ta_password_reset dan tandai OTP sudah terpakai
         if ($record) {
             $this->db_local->where('fn_id', $record->fn_id)->update('ta_password_reset', [
+                'fs_otp'         => 'USED',
                 'fs_reset_token' => $reset_token,
                 'fd_expired_at'  => date('Y-m-d H:i:s', time() + 1800), // 30 menit
             ]);
@@ -603,8 +622,19 @@ class Auth extends RestController
             "UPDATE ta_user_pasien SET fs_password_hash = ? WHERE fs_id = ?",
             [$password_hash, $user['fs_id']]
         );
-        // Hapus token reset yang sudah terpakai di ta_password_reset
-        $this->db_local->delete('ta_password_reset', ['fs_email' => $user['fs_email']]);
+        // Tandai token reset dan OTP sebagai USED (jangan dihapus agar tetap ada sebagai log)
+        if (!empty($reset_token)) {
+            $this->db_local->where('fs_reset_token', $reset_token)->update('ta_password_reset', [
+                'fs_otp'         => 'USED',
+                'fs_reset_token' => 'USED',
+            ]);
+        }
+        $this->db_local->where('fs_email', $user['fs_email'])
+                       ->where_not_in('fs_otp', ['EXPIRED'])
+                       ->update('ta_password_reset', [
+                           'fs_otp'         => 'USED',
+                           'fs_reset_token' => 'USED',
+                       ]);
         if ($updated) {
             $this->response([
                 'status'  => true,
