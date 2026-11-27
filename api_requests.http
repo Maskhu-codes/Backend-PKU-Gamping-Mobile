@@ -42,7 +42,15 @@ fs_mr=<MR-yang-cocok-dengan-token>
 &fs_jam_mulai=<HH:MM>
 
 ###
-# 5. Update Registrasi BPJS
+# 5. Batalkan Booking Aktif
+POST {{baseUrl}}/booking/batal
+Authorization: Bearer {{token}}
+Content-Type: application/x-www-form-urlencoded
+
+fs_kd_trs=<nomor-booking>
+
+###
+# 6. Update Registrasi BPJS
 # Melengkapi data nomor HP dan rujukan untuk pasien BPJS
 POST {{baseUrl}}/bpjs/registrasi
 Authorization: Bearer {{token}}

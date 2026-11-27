@@ -133,9 +133,9 @@ $db['local'] = array(
 );
 
 $db['antrian-farmasi'] = array(
-	'hostname' => $env('DB_FARMASI_HOST'),
-	'username' => $env('DB_FARMASI_USERNAME'),
-	'password' => $env('DB_FARMASI_PASSWORD'),
+	'hostname' => $env('DB_FARMASI_HOST', '', FALSE),
+	'username' => $env('DB_FARMASI_USERNAME', '', FALSE),
+	'password' => $env('DB_FARMASI_PASSWORD', '', FALSE),
 	'database' => $env('DB_FARMASI_DATABASE', 'antrian'),
 	'dbdriver' => 'mysqli',
 	'char_set' => 'utf8mb4',

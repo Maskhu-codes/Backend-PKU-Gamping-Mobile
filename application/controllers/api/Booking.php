@@ -98,26 +98,25 @@ class Booking extends RestController {
             return;
         }
 
-        $row_count = $this->db->query(
-            "SELECT * FROM TA_TRS_BOOKING 
-             WHERE FS_MR = ? AND FS_KD_LAYANAN = ? AND FD_TGL_PERIKSA = ? AND FS_KD_PETUGAS_MEDIS = ? AND FS_KD_SESION_POLI = ? AND FD_TGL_VOID = '3000-01-01'",
-            [$fs_mr_full, $fs_kd_layanan, $fd_tgl_antrian, $fs_kd_petugas_medis, $fs_kd_sesion_poli]
-        )->num_rows();
+        $this->db->trans_start();
 
-        $row_count2 = $this->db->query(
-            "SELECT * FROM TA_TRS_BOOKING WHERE FS_MR = ? AND FD_TGL_TRS = ? AND FD_TGL_VOID='3000-01-01'",
+        $active_booking_query = $this->db->query(
+            "SELECT TOP 1 FS_KD_TRS
+             FROM TA_TRS_BOOKING WITH (UPDLOCK, HOLDLOCK)
+             WHERE FS_MR = ? AND FD_TGL_PERIKSA >= ? AND FD_TGL_VOID = '3000-01-01'",
             [$fs_mr_full, $today]
-        )->num_rows();
-
-        if ($row_count >= 1) {
-            $this->response(['status' => false, 'message' => 'Anda Sudah Terdaftar 2 kali di jadwal ini'], RestController::HTTP_BAD_REQUEST);
-            return;
-        } elseif ($row_count2 >= 3) {
-            $this->response(['status' => false, 'message' => 'Maksimal Pendaftaran 3 kali sehari'], RestController::HTTP_BAD_REQUEST);
+        );
+        if (!$active_booking_query) {
+            $this->db->trans_rollback();
+            $this->response(['status' => false, 'message' => 'Gagal memeriksa booking aktif'], RestController::HTTP_INTERNAL_SERVER_ERROR);
             return;
         }
 
-        $this->db->trans_start();
+        if ($active_booking_query->num_rows() > 0) {
+            $this->db->trans_rollback();
+            $this->response(['status' => false, 'message' => 'Anda masih memiliki booking aktif. Batalkan booking tersebut sebelum mendaftar lagi.'], RestController::HTTP_CONFLICT);
+            return;
+        }
 
         $q_urut = $this->db->query(
             "SELECT fn_no_urut FROM ta_no_antrian WHERE fd_tgl_antrian = ? AND fs_kd_layanan = ? AND fb_prioritas = 0 AND fs_kd_petugas_medis = ?",
@@ -291,5 +290,38 @@ class Booking extends RestController {
         } else {
             $this->response(['status' => false, 'message' => 'Tidak ada pendaftaran aktif'], RestController::HTTP_NOT_FOUND);
         }
+    }
+
+    public function batal_post()
+    {
+        $decoded = $this->_verify();
+        if (!$decoded) {
+            return;
+        }
+
+        $fs_mr = isset($decoded->data->fs_mr) ? normalize_patient_mr($decoded->data->fs_mr) : null;
+        $fs_kd_trs = trim((string) $this->post('fs_kd_trs'));
+        if (empty($fs_mr) || $fs_kd_trs === '') {
+            $this->response(['status' => false, 'message' => 'Nomor booking wajib diisi'], RestController::HTTP_BAD_REQUEST);
+            return;
+        }
+
+        $query = $this->db->query(
+            "UPDATE TA_TRS_BOOKING
+             SET FD_TGL_VOID = ?
+             WHERE FS_KD_TRS = ? AND FS_MR = ? AND FD_TGL_VOID = '3000-01-01'",
+            [date('Y-m-d'), $fs_kd_trs, $fs_mr]
+        );
+        if (!$query) {
+            $this->response(['status' => false, 'message' => 'Gagal membatalkan booking'], RestController::HTTP_INTERNAL_SERVER_ERROR);
+            return;
+        }
+
+        if ($this->db->affected_rows() === 0) {
+            $this->response(['status' => false, 'message' => 'Booking aktif tidak ditemukan untuk pasien ini'], RestController::HTTP_NOT_FOUND);
+            return;
+        }
+
+        $this->response(['status' => true, 'message' => 'Booking berhasil dibatalkan'], RestController::HTTP_OK);
     }
 }

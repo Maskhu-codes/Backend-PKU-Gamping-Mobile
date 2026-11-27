@@ -64,8 +64,29 @@ Untuk kebijakan endpoint lainnya, lihat bagian Autentikasi di [README.md](README
     }
 }
 ```
+- Pasien hanya dapat memiliki satu booking aktif untuk tanggal hari ini atau
+  mendatang. Booking yang sudah dibatalkan tetap tersimpan sebagai riwayat dan
+  tidak menghalangi pendaftaran baru.
+- **Response `409`** jika pasien masih memiliki booking aktif; batalkan booking
+  tersebut terlebih dahulu.
 
-### 5. Update Registrasi BPJS
+### 5. Batalkan Booking
+- **Endpoint**: `POST /booking/batal`
+- **Header**: `Authorization: Bearer <TOKEN>`
+- **Body**:
+  - `fs_kd_trs` (string) - Nomor booking aktif
+- Pembatalan mengisi `TA_TRS_BOOKING.FD_TGL_VOID` dengan tanggal saat ini.
+  Record tidak dihapus secara fisik dan hanya booking milik pasien pada token
+  yang dapat dibatalkan.
+- **Response**:
+```json
+{
+    "status": true,
+    "message": "Booking berhasil dibatalkan"
+}
+```
+
+### 6. Update Registrasi BPJS
 - **Endpoint**: `POST /bpjs/registrasi`
 - **Body**:
   - `fs_kd_trs` (string) - Nomor Booking
@@ -82,14 +103,14 @@ Untuk kebijakan endpoint lainnya, lihat bagian Autentikasi di [README.md](README
 ```
 - `fs_mr` harus sesuai MR pada JWT dan `fs_kd_trs` harus merupakan booking aktif milik pasien tersebut.
 
-### 6. Data Beranda Pasien
+### 7. Data Beranda Pasien
 - **Endpoint**: `GET /beranda`
 - **Header**: `Authorization: Bearer <TOKEN>`
 - Identitas pasien diambil dari `data.fs_mr` pada JWT, bukan dari parameter request.
 - Data pasien dibaca dari `HOSPITAL.dbo.TC_MR`; booking aktif dibaca dari `TA_TRS_BOOKING` dan dilengkapi dengan `TA_TRS_ANTRIAN`, `TA_LAYANAN`, serta `TD_PEG`.
 - Jika pasien belum memiliki booking aktif, `booking_aktif` bernilai `null`.
 
-### 7. Antrean Pasien
+### 8. Antrean Pasien
 - **Endpoint**: `GET /antrean`
 - **Header**: `Authorization: Bearer <TOKEN>`
 - Opsional: `fs_kd_antrian` untuk memilih antrean aktif milik pasien yang login. Nomor antrean milik pasien lain tidak akan dikembalikan.
@@ -98,12 +119,12 @@ Untuk kebijakan endpoint lainnya, lihat bagian Autentikasi di [README.md](README
 - `jumlah_di_depan` dan `nomor_terakhir_dilayani` bernilai `null` untuk jadwal selain hari ini atau jika sumber data tidak memiliki nilai.
 - `lokasi_poli` saat ini `null`; belum ada sumber kolom lokasi/ruang yang terverifikasi di skema yang digunakan.
 
-### 8. Booking Aktif
+### 9. Booking Aktif
 - **Endpoint**: `GET /booking/aktif`
 - **Header**: `Authorization: Bearer <TOKEN>`
 - MR diambil dari token JWT. Mengembalikan booking aktif terdekat atau `404` bila tidak ada.
 
-### 9. Riwayat dan Penunjang
+### 10. Riwayat dan Penunjang
 - **Endpoint**: `GET /riwayat/list`, `GET /penunjang/radiologi`, `GET /penunjang/laboratorium`, `GET /penunjang/laboratorium_detail`
 - **Header**: `Authorization: Bearer <TOKEN>`
 - MR diambil dari JWT. `fs_mr` pada query string tidak dipakai. Detail laboratorium dibatasi ke transaksi milik pasien pada token.

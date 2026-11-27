@@ -329,8 +329,24 @@ Membuat booking/pendaftaran jadwal dokter.
 }
 ```
 
-Aturan validasi: MR + tanggal lahir harus cocok, kuota tidak penuh, maksimal
-1 booking per jadwal dan 3 pendaftaran per hari.
+Aturan validasi: MR + tanggal lahir harus cocok, kuota tidak penuh, dan pasien
+hanya dapat memiliki satu booking aktif untuk tanggal hari ini atau mendatang.
+Booking yang sudah dibatalkan melalui `FD_TGL_VOID` tidak menghalangi pendaftaran
+baru; riwayatnya tetap tersimpan.
+
+- **Response `409`**: pasien masih memiliki booking aktif dan harus membatalkannya
+  sebelum membuat booking baru.
+
+#### POST /booking/batal
+
+Membatalkan booking aktif milik pasien yang login dengan mengisi
+`TA_TRS_BOOKING.FD_TGL_VOID` dengan tanggal pembatalan. Data booking tidak
+dihapus secara fisik.
+
+- **Header**: `Authorization: Bearer <TOKEN>`
+- **Body**: `fs_kd_trs` (string, wajib) - Nomor booking
+- **Response `200`**: `{"status": true, "message": "Booking berhasil dibatalkan"}`
+- **Response `404`**: booking aktif tidak ditemukan untuk pasien tersebut.
 
 #### GET /booking/aktif
 
